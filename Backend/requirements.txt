@@ -1,0 +1,12 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+pymongo>=4.5.0
+chromadb>=0.4.15
+sentence-transformers>=2.2.2
+python-docx>=0.8.11
+openai>=1.0.0
+httpx>=0.25.0

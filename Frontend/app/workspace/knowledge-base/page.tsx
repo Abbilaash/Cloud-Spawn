@@ -1,0 +1,7 @@
+'use client'
+
+import Link from 'next/link'
+import { Database, FileText, MessageSquare } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { EmptyState, SectionEyebrow, Shell, StatCard } from '@/components/cloudspawn-shell'
+export default function KnowledgeBasePage() { return <Shell><div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-12"><SectionEyebrow>Workspace</SectionEyebrow><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><h1 className="text-3xl font-semibold tracking-tight">Knowledge Base</h1><p className="mt-2 text-muted-foreground">Your processed documents and retrieval index.</p></div><Button asChild><Link href="/workspace/upload">Build knowledge base</Link></Button></div><div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5"><StatCard label="Documents" value="—" detail="Not available yet" icon={FileText} /><StatCard label="Processed" value="—" detail="Not available yet" icon={FileText} /><StatCard label="Chunks" value="—" detail="Not available yet" icon={Database} /><StatCard label="Vectors" value="—" detail="Not available yet" icon={Database} /><StatCard label="Status" value="Idle" detail="Waiting for documents" icon={Database} /></div><div className="mt-8"><EmptyState icon={Database} title="No knowledge base yet" description="Upload DOCX files to create your first searchable collection." action={<Button asChild><Link href="/workspace/upload">Upload documents</Link></Button>} /></div></div></Shell> }

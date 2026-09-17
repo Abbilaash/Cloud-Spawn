@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Environment variables
+.env
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Data directories (keep directory structure via .gitkeep if needed)
+data/uploads/*
+!data/uploads/.gitkeep
+data/chroma/*
+!data/chroma/.gitkeep
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
