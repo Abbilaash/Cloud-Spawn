@@ -42,10 +42,11 @@ async def trigger_build_job(
     )
 
     jobs_col.insert_one(job_doc)
-    logger.info(f"Created knowledge base build job_id: {job_id} for {len(request.document_ids)} documents.")
+    logger.info(f"[MongoDB] Inserted build job record {job_id} for {len(request.document_ids)} document(s) into 'jobs' collection (Status: QUEUED).")
 
     # Schedule background processing
     background_tasks.add_task(process_knowledge_base_build_job, job_id)
+    logger.info(f"[Job Runner] Dispatched background processing task for job_id: {job_id}")
 
     return BuildJobResponse(
         job_id=job_id,
@@ -53,10 +54,13 @@ async def trigger_build_job(
     )
 
 
+
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(job_id: str):
-    """Retrieve execution status and progress metrics for a knowledge base job."""
+    """Retrieve execution status, telemetry metrics, and document details for a knowledge base job."""
     jobs_col = db_manager.get_jobs_collection()
+    docs_col = db_manager.get_documents_collection()
+    
     job = jobs_col.find_one({"job_id": job_id})
 
     if not job:
@@ -65,6 +69,22 @@ async def get_job_status(job_id: str):
             detail=f"Job with ID '{job_id}' not found."
         )
 
+    document_ids = job.get("document_ids", [])
+    documents_telemetry = []
+
+    if document_ids:
+        docs = list(docs_col.find({"document_id": {"$in": document_ids}}))
+        for doc in docs:
+            documents_telemetry.append({
+                "document_id": doc.get("document_id"),
+                "filename": doc.get("filename"),
+                "file_type": doc.get("file_type"),
+                "file_size_bytes": doc.get("file_size_bytes"),
+                "status": doc.get("status", "pending"),
+                "processing_step": doc.get("processing_step", "Queued"),
+                "cluster_id": doc.get("cluster_id")
+            })
+
     return JobStatusResponse(
         job_id=job["job_id"],
         status=job["status"],
@@ -72,7 +92,11 @@ async def get_job_status(job_id: str):
         processed_documents=job.get("processed_documents", 0),
         failed_documents=job.get("failed_documents", 0),
         progress=job.get("progress", 0),
+        cluster_count=job.get("cluster_count"),
+        clusters=job.get("clusters"),
+        documents=documents_telemetry if documents_telemetry else None,
         created_at=job.get("created_at"),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at")
     )
+

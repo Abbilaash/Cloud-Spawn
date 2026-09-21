@@ -12,8 +12,9 @@ class DatabaseManager:
     @classmethod
     def get_client(cls) -> MongoClient:
         if cls._client is None:
-            logger.info(f"Connecting to MongoDB at {settings.MONGODB_URI}")
+            logger.info(f"[MongoDB] Opening MongoDB connection at {settings.MONGODB_URI}...")
             cls._client = MongoClient(settings.MONGODB_URI, serverSelectionTimeoutMS=5000)
+            logger.info("[MongoDB] MongoDB connection established successfully.")
         return cls._client
 
     @classmethod
@@ -21,6 +22,7 @@ class DatabaseManager:
         if cls._db is None:
             client = cls.get_client()
             cls._db = client[settings.MONGODB_DATABASE]
+            logger.info(f"[MongoDB] Selected database: '{settings.MONGODB_DATABASE}'")
         return cls._db
 
     @classmethod
@@ -38,9 +40,11 @@ class DatabaseManager:
     @classmethod
     def close(cls):
         if cls._client is not None:
+            logger.info("[MongoDB] Closing MongoDB client connection...")
             cls._client.close()
             cls._client = None
             cls._db = None
-            logger.info("Closed MongoDB connection.")
+            logger.info("[MongoDB] MongoDB connection closed.")
 
 db_manager = DatabaseManager
+

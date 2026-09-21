@@ -7,4 +7,105 @@ import { Button } from '@/components/ui/button'
 import { Shell, SectionEyebrow } from '@/components/cloudspawn-shell'
 import { buildKnowledgeBase, uploadDocuments } from '@/lib/api'
 
-export default function UploadPage() { const [files, setFiles] = useState<File[]>([]); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const select = (event: ChangeEvent<HTMLInputElement>) => { setFiles((current) => [...current, ...Array.from(event.target.files || []).filter((file) => file.name.endsWith('.docx'))]) }; const build = async () => { setBusy(true); setError(''); try { const uploaded = await uploadDocuments(files); const result = await buildKnowledgeBase({ document_ids: uploaded.document_ids }); window.location.href = `/workspace/processing?job_id=${result.job_id}` } catch { setError('Unable to connect to the backend. Please try again when your FastAPI service is running.') } finally { setBusy(false) } }; return <Shell><div className="mx-auto max-w-4xl px-5 py-8 md:px-8 md:py-12"><SectionEyebrow>Documents</SectionEyebrow><h1 className="text-3xl font-semibold tracking-tight">Build Knowledge Base</h1><p className="mt-2 text-muted-foreground">Upload documents and create your searchable AI knowledge base.</p><label className="mt-8 flex min-h-64 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed bg-card/50 px-6 text-center transition hover:border-foreground/40 hover:bg-card"><input type="file" accept=".docx" multiple className="sr-only" onChange={select} /><span className="grid size-12 place-items-center rounded-lg border bg-muted/40"><UploadCloud className="size-5 text-muted-foreground" /></span><span className="mt-4 font-medium">Drop DOCX files here</span><span className="mt-1 text-sm text-muted-foreground">or click to browse · Supports .docx</span></label>{files.length > 0 && <div className="mt-8 rounded-xl border bg-card"><div className="flex items-center justify-between border-b p-5"><div><h2 className="font-medium">Selected documents</h2><p className="mt-1 text-xs text-muted-foreground">{files.length} {files.length === 1 ? 'document' : 'documents'} selected</p></div><Button variant="ghost" size="sm" onClick={() => setFiles([])}>Clear</Button></div><div className="flex flex-col divide-y">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-3 px-5 py-3"><FileText className="size-4 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-sm">{file.name}</span><span className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(1)} MB</span><Check className="size-4 text-emerald-500" /></div>)}</div></div>}{error && <div className="mt-5 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>}<div className="mt-6 flex justify-end"><Button disabled={!files.length || busy} onClick={build}>{busy ? <><Loader2 data-icon="inline-start" className="animate-spin" />Building...</> : 'Build Knowledge Base'}</Button></div></div></Shell> }
+export default function UploadPage() {
+  const [files, setFiles] = useState<File[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const select = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || []).filter((file) => {
+      const name = file.name.toLowerCase()
+      return name.endsWith('.docx') || name.endsWith('.pdf')
+    })
+    setFiles((current) => [...current, ...selectedFiles])
+  }
+
+  const build = async () => {
+    if (!files.length) return
+    setBusy(true)
+    setError('')
+
+    try {
+      // 1. Upload DOCX/PDF files to backend
+      const uploadResult = await uploadDocuments(files)
+      const docIds = uploadResult.documents.map((d) => d.document_id)
+
+      if (!docIds.length) {
+        throw new Error('No valid document IDs returned from upload.')
+      }
+
+      // 2. Trigger knowledge base ingestion job
+      const jobResult = await buildKnowledgeBase({ document_ids: docIds })
+
+      // 3. Redirect to processing status monitor
+      window.location.href = `/workspace/processing?job_id=${jobResult.job_id}`
+    } catch (err: any) {
+      setError(err?.message || 'Unable to connect to the backend. Please ensure FastAPI is running at http://localhost:8000.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Shell>
+      <div className="mx-auto max-w-4xl px-5 py-8 md:px-8 md:py-12">
+        <SectionEyebrow>Documents</SectionEyebrow>
+        <h1 className="text-3xl font-semibold tracking-tight">Build Knowledge Base</h1>
+        <p className="mt-2 text-muted-foreground">Upload DOCX or PDF documents and create your searchable AI knowledge base.</p>
+
+        <label className="mt-8 flex min-h-64 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed bg-card/50 px-6 text-center transition hover:border-foreground/40 hover:bg-card">
+          <input type="file" accept=".docx,.pdf" multiple className="sr-only" onChange={select} />
+          <span className="grid size-12 place-items-center rounded-lg border bg-muted/40">
+            <UploadCloud className="size-5 text-muted-foreground" />
+          </span>
+          <span className="mt-4 font-medium">Drop DOCX or PDF files here</span>
+          <span className="mt-1 text-sm text-muted-foreground">or click to browse · Supports .docx and .pdf</span>
+        </label>
+
+        {files.length > 0 && (
+          <div className="mt-8 rounded-xl border bg-card">
+            <div className="flex items-center justify-between border-b p-5">
+              <div>
+                <h2 className="font-medium">Selected documents</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {files.length} {files.length === 1 ? 'document' : 'documents'} selected
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setFiles([])}>
+                Clear
+              </Button>
+            </div>
+            <div className="flex flex-col divide-y">
+              {files.map((file, index) => (
+                <div key={`${file.name}-${index}`} className="flex items-center gap-3 px-5 py-3">
+                  <FileText className="size-4 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{file.name}</span>
+                  <span className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                  <Check className="size-4 text-emerald-500" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-5 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end">
+          <Button disabled={!files.length || busy} onClick={build}>
+            {busy ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" /> Building...
+              </>
+            ) : (
+              'Build Knowledge Base'
+            )}
+          </Button>
+        </div>
+      </div>
+    </Shell>
+  )
+}

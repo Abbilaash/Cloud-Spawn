@@ -1,0 +1,10 @@
+name: docx-splitter
+version: 0.1.0
+runtime:
+  language: python
+  framework: custom
+entrypoint: main.py
+capabilities:
+  - document-splitting
+  - document-clustering
+  - text-processing

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = Field(default="https://api.openai.com/v1")
     
     UPLOAD_DIRECTORY: str = Field(default="./data/uploads")
-    CORS_ORIGINS: str = Field(default="http://localhost:3000")
+    CORS_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001")
     
     EMBEDDING_MODEL_NAME: str = Field(default="all-MiniLM-L6-v2")
     TOP_K_CHUNKS: int = Field(default=5)
@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         if not self.CORS_ORIGINS:
-            return ["http://localhost:3000"]
+            return ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"]
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
 
     class Config:
         env_file = ".env"

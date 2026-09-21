@@ -1,7 +1,9 @@
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import docx
+import pypdf
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +17,34 @@ class DocumentProcessingInterface(ABC):
         chunk_size: int = 800,
         chunk_overlap: int = 100
     ) -> List[Dict[str, Any]]:
-        """Extract text from document and return chunk dictionary list."""
+        """Extract text from document (DOCX or PDF) and return chunk dictionary list."""
         pass
 
 
 class LocalDocumentProcessor(DocumentProcessingInterface):
-    """Local implementation of document processing using python-docx."""
+    """Local implementation of document processing supporting DOCX and PDF files."""
+
+    def _extract_text_from_docx(self, file_path: str) -> str:
+        try:
+            doc = docx.Document(file_path)
+            paragraphs = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+            return "\n\n".join(paragraphs)
+        except Exception as e:
+            logger.error(f"Error reading DOCX file {file_path}: {str(e)}")
+            raise ValueError(f"Failed to read DOCX file: {str(e)}")
+
+    def _extract_text_from_pdf(self, file_path: str) -> str:
+        try:
+            reader = pypdf.PdfReader(file_path)
+            page_texts = []
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text and text.strip():
+                    page_texts.append(text.strip())
+            return "\n\n".join(page_texts)
+        except Exception as e:
+            logger.error(f"Error reading PDF file {file_path}: {str(e)}")
+            raise ValueError(f"Failed to read PDF file: {str(e)}")
 
     def extract_text_and_chunk(
         self,
@@ -30,18 +54,18 @@ class LocalDocumentProcessor(DocumentProcessingInterface):
         chunk_size: int = 800,
         chunk_overlap: int = 100
     ) -> List[Dict[str, Any]]:
-        logger.info(f"Extracting text from DOCX file: {file_path}")
+        logger.info(f"Extracting text from file: {file_path} ({filename})")
         
-        try:
-            doc = docx.Document(file_path)
-        except Exception as e:
-            logger.error(f"Error reading docx file {file_path}: {str(e)}")
-            raise ValueError(f"Failed to read DOCX file: {str(e)}")
+        ext = os.path.splitext(filename)[1].lower()
 
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
-        full_text = "\n\n".join(paragraphs)
+        if ext == ".docx":
+            full_text = self._extract_text_from_docx(file_path)
+        elif ext == ".pdf":
+            full_text = self._extract_text_from_pdf(file_path)
+        else:
+            raise ValueError(f"Unsupported file format '{ext}'. Only .docx and .pdf files are supported.")
 
-        if not full_text:
+        if not full_text or not full_text.strip():
             logger.warning(f"No text extracted from document_id {document_id} ({filename})")
             return []
 
@@ -69,7 +93,7 @@ class LocalDocumentProcessor(DocumentProcessingInterface):
             if start >= len(words) or end >= len(words):
                 break
 
-        logger.info(f"Generated {len(chunks)} chunks for document_id {document_id}")
+        logger.info(f"Generated {len(chunks)} chunks for document_id {document_id} ({filename})")
         return chunks
 
 
