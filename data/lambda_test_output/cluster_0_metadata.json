@@ -1,0 +1,26 @@
+[
+  {
+    "vector_id": 0,
+    "chunk_id": "doc1_chunk_0",
+    "document_id": "doc1",
+    "filename": "quantum_computing_intro.docx",
+    "chunk_index": 0,
+    "text": "Quantum computing is a rapidly-emerging technology that harnesses the laws of quantum mechanics to solve complex problems."
+  },
+  {
+    "vector_id": 1,
+    "chunk_id": "doc1_chunk_1",
+    "document_id": "doc1",
+    "filename": "quantum_computing_intro.docx",
+    "chunk_index": 1,
+    "text": "Superposition and entanglement are two key principles of quantum physics that empower quantum computers."
+  },
+  {
+    "vector_id": 2,
+    "chunk_id": "doc2_chunk_0",
+    "document_id": "doc2",
+    "filename": "ai_agents_framework.docx",
+    "chunk_index": 0,
+    "text": "Autonomous AI agents perform complex multi-step tasks by utilizing tool invocation, memory, and LLM reasoning."
+  }
+]
