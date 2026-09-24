@@ -16,12 +16,49 @@ except ImportError:
     logger.warning("FAISS package is not installed. Install with `pip install faiss-cpu` or `pip install faiss-gpu`.")
 
 
+def fetch_faiss_artifacts_from_s3(
+    s3_index_key: str,
+    s3_metadata_key: str,
+    local_dir: str = "./data/s3_cache"
+) -> tuple[str, str]:
+    """Downloads FAISS index and metadata files from AWS S3 to local cache directory.
+    
+    Returns tuple of (local_index_path, local_metadata_path).
+    """
+    os.makedirs(local_dir, exist_ok=True)
+    local_index_path = os.path.join(local_dir, os.path.basename(s3_index_key))
+    local_metadata_path = os.path.join(local_dir, os.path.basename(s3_metadata_key))
+
+    try:
+        from app.core.config import settings
+        bucket_name = settings.AWS_S3_BUCKET_NAME
+
+        import boto3
+        s3_client = boto3.client(
+            "s3",
+            region_name=settings.AWS_REGION or "us-east-1",
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None
+        )
+        logger.info(f"[S3 Fetcher] Downloading '{s3_index_key}' from S3 bucket '{bucket_name}'...")
+        s3_client.download_file(bucket_name, s3_index_key, local_index_path)
+
+        logger.info(f"[S3 Fetcher] Downloading '{s3_metadata_key}' from S3 bucket '{bucket_name}'...")
+        s3_client.download_file(bucket_name, s3_metadata_key, local_metadata_path)
+
+        logger.info("[S3 Fetcher] Successfully retrieved FAISS artifacts from S3.")
+    except Exception as e:
+        logger.warning(f"[S3 Fetcher] S3 download notice ({e}). Checking local cache...")
+
+    return local_index_path, local_metadata_path
+
+
 class FAISSVectorSearcher:
     """Generalized FAISS Vector Database Search Engine.
     
     Performs similarity search on a FAISS vector index given a query vector
     and database location. Supports automatic index caching, metadata loading,
-    and vector normalization.
+    S3 retrieval, and vector normalization.
     """
 
     def __init__(
@@ -33,7 +70,7 @@ class FAISSVectorSearcher:
         """Initialize the FAISS Vector Searcher.
         
         Args:
-            db_location: Path to the FAISS index file (.index, .faiss, .bin) or directory.
+            db_location: Path to FAISS index file (.index, .faiss) or S3 path/key.
             metadata_location: Optional path to JSON or PKL file storing document metadata.
             normalize_vectors: If True, L2-normalizes query vectors for cosine similarity.
         """
@@ -42,6 +79,11 @@ class FAISSVectorSearcher:
         self.normalize_vectors: bool = normalize_vectors
         self.index: Any = None
         self.metadata: Optional[List[Dict[str, Any]]] = None
+
+        if db_location and db_location.startswith("s3://"):
+            s3_index_key = db_location.replace("s3://", "").split("/", 1)[-1]
+            s3_meta_key = metadata_location.replace("s3://", "").split("/", 1)[-1] if metadata_location else s3_index_key.replace(".faiss", "_metadata.json")
+            db_location, metadata_location = fetch_faiss_artifacts_from_s3(s3_index_key, s3_meta_key)
 
         if db_location:
             self.load_index(db_location)

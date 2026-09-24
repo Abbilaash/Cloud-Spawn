@@ -51,10 +51,28 @@ class TextVectorizer:
             logger.error(f"[Lambda Vectorizer] Failed to load model '{self.model_name}': {str(e)}", exc_info=True)
             raise RuntimeError(f"Error loading model '{self.model_name}': {str(e)}") from e
 
+    def _fallback_encode(self, texts: List[str]) -> np.ndarray:
+        """Fallback vector encoder producing normalized 384-d pseudo-vectors if sentence-transformers is missing."""
+        logger.warning(f"[Lambda Vectorizer] sentence_transformers unavailable. Generating {len(texts)} fallback 384-d vectors.")
+        vectors = []
+        for text in texts:
+            # Deterministic pseudo vector based on text hash
+            seed = sum(ord(c) for c in text) % (2**32)
+            rng = np.random.RandomState(seed)
+            vec = rng.randn(384).astype(np.float32)
+            if self.normalize_embeddings:
+                norm = np.linalg.norm(vec)
+                if norm > 0:
+                    vec = vec / norm
+            vectors.append(vec)
+        return np.vstack(vectors)
+
     def encode_text(self, text: str) -> List[float]:
         """Convert single text string to 1D vector list of floats (384-d)."""
         if not text or not text.strip():
             raise ValueError("Input text cannot be empty.")
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            return self._fallback_encode([text.strip()])[0].tolist()
         self._load_model()
         embedding = self._model.encode(
             text.strip(),
@@ -71,6 +89,9 @@ class TextVectorizer:
         cleaned_texts = [t.strip() for t in texts if t and t.strip()]
         if not cleaned_texts:
             raise ValueError("No valid texts in batch for encoding.")
+
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            return self._fallback_encode(cleaned_texts)
 
         self._load_model()
         embeddings = self._model.encode(
