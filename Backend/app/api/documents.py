@@ -22,12 +22,40 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             detail="No files uploaded."
         )
 
-    logger.info(f"[File Upload] Starting upload processing for {len(files)} file(s)...")
+    logger.info(f"[File Upload] Starting upload processing for {len(files)} file(s). Purging previous documents...")
     upload_dir = settings.UPLOAD_DIRECTORY
+    faiss_dir = settings.FAISS_OUTPUT_DIRECTORY
+    docs_col = db_manager.get_documents_collection()
+    jobs_col = db_manager.get_jobs_collection()
+
+    # 1. Purge previous uploaded files from disk
+    if os.path.exists(upload_dir):
+        for f in os.listdir(upload_dir):
+            if not f.startswith(".gitkeep"):
+                fp = os.path.join(upload_dir, f)
+                try:
+                    if os.path.isfile(fp):
+                        os.remove(fp)
+                except Exception as e:
+                    logger.warning(f"[File Upload Cleanup] Could not remove file '{fp}': {e}")
     os.makedirs(upload_dir, exist_ok=True)
 
+    # 2. Purge previous FAISS index files
+    if os.path.exists(faiss_dir):
+        for f in os.listdir(faiss_dir):
+            fp = os.path.join(faiss_dir, f)
+            try:
+                if os.path.isfile(fp):
+                    os.remove(fp)
+            except Exception as e:
+                logger.warning(f"[File Upload Cleanup] Could not remove FAISS file '{fp}': {e}")
+
+    # 3. Purge previous document and job records from MongoDB
+    purged_res = docs_col.delete_many({})
+    jobs_col.delete_many({})
+    logger.info(f"[File Upload Cleanup] Purged {purged_res.deleted_count} previous document record(s) and job histories from MongoDB.")
+
     uploaded_docs: List[DocumentItem] = []
-    docs_col = db_manager.get_documents_collection()
 
     for file in files:
         filename = file.filename or ""
