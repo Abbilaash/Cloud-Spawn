@@ -15,34 +15,33 @@ async def trigger_build_job(
     request: BuildJobRequest,
     background_tasks: BackgroundTasks
 ):
-    """Trigger background job for DOCX ingestion, chunking, embedding, and vector indexing."""
-    if not request.document_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="document_ids list cannot be empty."
-        )
-
+    """Trigger background job for DOCX/PDF ingestion, dynamic clustering, embedding, and vector indexing across all knowledge base files."""
     docs_col = db_manager.get_documents_collection()
     jobs_col = db_manager.get_jobs_collection()
 
-    # Validate that at least one requested document exists
-    existing_docs_count = docs_col.count_documents({"document_id": {"$in": request.document_ids}})
-    if existing_docs_count == 0:
+    # Gather ALL uploaded document IDs from MongoDB to perform complete re-clustering over all files
+    all_docs = list(docs_col.find({}, {"document_id": 1}))
+    all_doc_ids = [d["document_id"] for d in all_docs if "document_id" in d]
+
+    if not all_doc_ids:
+        all_doc_ids = request.document_ids or []
+
+    if not all_doc_ids:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="None of the specified document_ids were found."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No uploaded documents found in knowledge base. Please upload documents first."
         )
 
     job_id = str(uuid.uuid4())
     job_doc = create_job_model(
         job_id=job_id,
-        document_ids=request.document_ids,
-        total_documents=len(request.document_ids),
+        document_ids=all_doc_ids,
+        total_documents=len(all_doc_ids),
         status=JobStatus.QUEUED
     )
 
     jobs_col.insert_one(job_doc)
-    logger.info(f"[MongoDB] Inserted build job record {job_id} for {len(request.document_ids)} document(s) into 'jobs' collection (Status: QUEUED).")
+    logger.info(f"[MongoDB] Inserted build job record {job_id} for {len(all_doc_ids)} document(s) into 'jobs' collection (Status: QUEUED).")
 
     # Schedule background processing
     background_tasks.add_task(process_knowledge_base_build_job, job_id)

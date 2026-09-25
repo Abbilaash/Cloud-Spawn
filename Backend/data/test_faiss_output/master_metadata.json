@@ -1,0 +1,27 @@
+{
+  "job_id": "test_pipeline_job_100",
+  "total_vectors": 2,
+  "dimension": 384,
+  "total_clusters": 2,
+  "updated_at": 1790341498.9016824,
+  "chunks": [
+    {
+      "vector_id": 0,
+      "chunk_id": "doc_2_0",
+      "document_id": "doc_2",
+      "filename": "doc2_formicx.docx",
+      "chunk_index": 0,
+      "text": "Autonomous Formicx AI agents execute multi-step task workflows using inter-process communication. The vector orchestrator agent aggregates vector embeddings from serverless Lambda container workers.",
+      "job_id": "test_pipeline_job_100"
+    },
+    {
+      "vector_id": 1,
+      "chunk_id": "doc_1_0",
+      "document_id": "doc_1",
+      "filename": "doc1_quantum.docx",
+      "chunk_index": 0,
+      "text": "Quantum computing harnesses superposition and entanglement to perform complex computations. Quantum bits or qubits allow parallel state processing beyond classical binary hardware.",
+      "job_id": "test_pipeline_job_100"
+    }
+  ]
+}

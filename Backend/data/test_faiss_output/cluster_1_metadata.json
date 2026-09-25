@@ -1,0 +1,10 @@
+[
+  {
+    "vector_id": 0,
+    "chunk_id": "doc_1_0",
+    "document_id": "doc_1",
+    "filename": "doc1_quantum.docx",
+    "chunk_index": 0,
+    "text": "Quantum computing harnesses superposition and entanglement to perform complex computations. Quantum bits or qubits allow parallel state processing beyond classical binary hardware."
+  }
+]

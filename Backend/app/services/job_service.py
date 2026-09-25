@@ -89,7 +89,7 @@ def process_knowledge_base_build_job(job_id: str):
         try:
             logger.info("[Formicx Agent] Executing DocumentSplitterAgent instance directly...")
             from main import DocumentSplitterAgent
-            agent = DocumentSplitterAgent(agent_name="cloudspawn-job-worker")
+            agent = DocumentSplitterAgent()
             agent.on_start()
             cluster_result = agent.process_document_clustering(folder_path=upload_dir, distance_threshold=0.6)
             logger.info(f"[Formicx Agent] Direct DocumentSplitterAgent execution completed: {cluster_result.get('cluster_count')} dynamic clusters formed.")
@@ -138,6 +138,40 @@ def process_knowledge_base_build_job(job_id: str):
         except Exception as exc:
             logger.error(f"[AWS Lambda Runner] Error during Lambda worker dispatch: {str(exc)}", exc_info=True)
             embedding_summary = {"status": "failed", "error": str(exc), "total_chunks_vectorized": 0, "cluster_results": []}
+
+        # 3.5. Formicx Vector Orchestrator Agent Consolidation
+        if embedding_summary.get("status") in ["success", "partial_success"] and embedding_summary.get("cluster_results"):
+            try:
+                faiss_output_dir = os.path.abspath(settings.FAISS_OUTPUT_DIRECTORY)
+                logger.info(f"[Formicx Orchestrator] Triggering VectorOrchestratorAgent to consolidate partition FAISS indices for job '{job_id}'...")
+                
+                vector_orchestration_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../vector-orchestrator"))
+                if vector_orchestration_dir not in sys.path:
+                    sys.path.insert(0, vector_orchestration_dir)
+                
+                from main import VectorOrchestratorAgent
+                orchestrator = VectorOrchestratorAgent()
+                orchestrator.register_job(job_id=job_id, total_clusters=len(clusters), output_dir=faiss_output_dir)
+
+                for c_res in embedding_summary.get("cluster_results", []):
+                    c_id = c_res.get("cluster_id", 0)
+                    idx_p = c_res.get("index_file_path")
+                    meta_p = c_res.get("metadata_file_path")
+                    c_chunks = c_res.get("total_chunks", 0)
+
+                    if idx_p and meta_p and os.path.exists(idx_p) and os.path.exists(meta_p):
+                        orchestrator.submit_cluster_output(
+                            job_id=job_id,
+                            cluster_id=c_id,
+                            index_file_path=idx_p,
+                            metadata_file_path=meta_p,
+                            total_chunks=c_chunks
+                        )
+
+                merge_res = orchestrator.merge_job_indices(job_id)
+                logger.info(f"[Formicx Orchestrator] Master FAISS Vector DB successfully merged: {merge_res.get('total_vectors', 0)} total vectors saved to '{merge_res.get('master_index_path')}'")
+            except Exception as orch_err:
+                logger.warning(f"[Formicx Orchestrator] Vector Orchestrator consolidation notice: {str(orch_err)}", exc_info=True)
 
     # 4. Finalize Job & Document Statuses in MongoDB
     completed_iso = datetime.now(timezone.utc).isoformat()

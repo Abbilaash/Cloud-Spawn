@@ -182,7 +182,12 @@ class VectorOrchestratorAgent(Agent):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     part_meta = json.load(f)
 
-                chunks = part_meta.get("chunks", [])
+                if isinstance(part_meta, list):
+                    chunks = part_meta
+                elif isinstance(part_meta, dict):
+                    chunks = part_meta.get("chunks", part_meta.get("items", []))
+                else:
+                    chunks = []
                 for chunk in chunks:
                     chunk["vector_id"] = global_vector_id
                     chunk["job_id"] = job_id

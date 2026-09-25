@@ -50,7 +50,15 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
     cluster_id = payload.get("cluster_id", 0)
     job_id = payload.get("job_id", "unknown_job")
     output_dir = payload.get("output_dir", "/tmp")
-    os.makedirs(output_dir, exist_ok=True)
+    # If running inside AWS Lambda runtime environment, force output_dir to /tmp
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("LAMBDA_TASK_ROOT"):
+        if not str(output_dir).startswith("/tmp"):
+            output_dir = "/tmp"
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except Exception:
+        output_dir = "/tmp"
+        os.makedirs(output_dir, exist_ok=True)
 
     raw_chunks = payload.get("text_chunks", payload.get("chunks", []))
     raw_texts = payload.get("texts", [])

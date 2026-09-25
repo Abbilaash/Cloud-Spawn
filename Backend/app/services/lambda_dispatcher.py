@@ -51,43 +51,62 @@ class LambdaDispatcherService:
             "output_dir": output_dir
         }
 
+        # 1. Attempt AWS Lambda remote invocation if AWS credentials and function name are set
+        if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY and settings.AWS_LAMBDA_FUNCTION_NAME:
+            try:
+                import boto3
+                logger.info(f"[AWS Lambda Dispatcher] Spawning AWS Lambda worker process for Cluster #{cluster_id} (Function: '{settings.AWS_LAMBDA_FUNCTION_NAME}', Region: '{settings.AWS_REGION}')...")
+                
+                lambda_client = boto3.client(
+                    "lambda",
+                    region_name=settings.AWS_REGION,
+                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+                )
+
+                response = lambda_client.invoke(
+                    FunctionName=settings.AWS_LAMBDA_FUNCTION_NAME,
+                    InvocationType="RequestResponse",
+                    Payload=json.dumps(payload)
+                )
+
+                response_payload_raw = response["Payload"].read().decode("utf-8")
+                response_data = json.loads(response_payload_raw)
+
+                if response_data.get("statusCode") == 200:
+                    body = response_data.get("body", {})
+                    logger.info(f"[AWS Lambda Dispatcher] AWS Lambda worker for Cluster #{cluster_id} completed successfully. Vectorized {body.get('total_chunks')} chunks.")
+                    return body
+                else:
+                    logger.warning(f"[AWS Lambda Dispatcher] AWS Lambda worker returned notice: {response_data}. Running local worker fallback.")
+            except Exception as exc:
+                logger.warning(f"[AWS Lambda Dispatcher] AWS Lambda remote invocation notice: {str(exc)}. Running local container worker fallback.")
+
+        # 2. Fallback: Execute local Lambda container handler (lambda-worker/handler.py)
         try:
-            import boto3
-            logger.info(f"[AWS Lambda Dispatcher] Spawning AWS Lambda worker process for Cluster #{cluster_id} (Function: '{settings.AWS_LAMBDA_FUNCTION_NAME}', Region: '{settings.AWS_REGION}')...")
-            
-            lambda_client = boto3.client(
-                "lambda",
-                region_name=settings.AWS_REGION,
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None
-            )
+            lambda_worker_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../lambda-worker"))
+            if lambda_worker_dir not in sys.path:
+                sys.path.insert(0, lambda_worker_dir)
+            from handler import lambda_handler
 
-            response = lambda_client.invoke(
-                FunctionName=settings.AWS_LAMBDA_FUNCTION_NAME,
-                InvocationType="RequestResponse",
-                Payload=json.dumps(payload)
-            )
-
-            response_payload_raw = response["Payload"].read().decode("utf-8")
-            response_data = json.loads(response_payload_raw)
-
-            if response_data.get("statusCode") == 200:
-                body = response_data.get("body", {})
-                logger.info(f"[AWS Lambda Dispatcher] AWS Lambda worker for Cluster #{cluster_id} completed successfully. Vectorized {body.get('total_chunks')} chunks.")
+            logger.info(f"[AWS Lambda Dispatcher] Executing local Lambda container worker handler for Cluster #{cluster_id}...")
+            res = lambda_handler(payload)
+            if res.get("statusCode") == 200:
+                body = res.get("body", {})
+                logger.info(f"[AWS Lambda Dispatcher] Local Lambda worker for Cluster #{cluster_id} completed successfully. Vectorized {body.get('total_chunks')} chunks.")
                 return body
             else:
-                logger.error(f"[AWS Lambda Dispatcher] AWS Lambda worker for Cluster #{cluster_id} returned error: {response_data}")
                 return {
                     "cluster_id": cluster_id,
                     "status": "error",
-                    "message": response_data.get("body", {}).get("message", "Lambda execution failed")
+                    "message": res.get("body", {}).get("message", "Local worker execution failed")
                 }
-        except Exception as exc:
-            logger.error(f"[AWS Lambda Dispatcher] AWS Lambda worker process failed for Cluster #{cluster_id}: {str(exc)}", exc_info=True)
+        except Exception as err:
+            logger.error(f"[AWS Lambda Dispatcher] Local worker execution failed for Cluster #{cluster_id}: {str(err)}", exc_info=True)
             return {
                 "cluster_id": cluster_id,
                 "status": "error",
-                "message": str(exc)
+                "message": str(err)
             }
 
     def dispatch_clusters(

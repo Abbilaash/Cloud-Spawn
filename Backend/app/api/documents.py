@@ -234,6 +234,17 @@ async def delete_document(document_id: str):
         except Exception as e:
             logger.warning(f"Could not remove file '{file_path}': {e}")
 
+    upload_dir = settings.UPLOAD_DIRECTORY
+    if os.path.exists(upload_dir):
+        for f in os.listdir(upload_dir):
+            if f.startswith(f"{document_id}_"):
+                fp = os.path.join(upload_dir, f)
+                try:
+                    os.remove(fp)
+                    logger.info(f"[Cleanup] Removed file from upload directory: '{fp}'")
+                except Exception as e:
+                    logger.warning(f"Could not remove file '{fp}': {e}")
+
     # 2. Delete from Vector Service
     vector_service.delete_document(document_id)
 

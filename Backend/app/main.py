@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, status, Response
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import db_manager
@@ -44,7 +44,7 @@ app = FastAPI(
 origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins if origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -58,8 +58,8 @@ app.include_router(chat_router)
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    """Favicon endpoint to prevent 404 log entries when accessed via browser."""
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    """Handle browser favicon request cleanly with 204 No Content."""
+    return Response(status_code=204)
 
 @app.get("/health", tags=["System"], status_code=status.HTTP_200_OK)
 async def health_check():
