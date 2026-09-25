@@ -128,7 +128,13 @@ class FAISSVectorSearcher:
         try:
             if metadata_location.endswith(".json"):
                 with open(metadata_location, "r", encoding="utf-8") as f:
-                    self.metadata = json.load(f)
+                    loaded_data = json.load(f)
+                    if isinstance(loaded_data, dict) and "chunks" in loaded_data:
+                        self.metadata = loaded_data["chunks"]
+                    elif isinstance(loaded_data, dict) and "items" in loaded_data:
+                        self.metadata = loaded_data["items"]
+                    else:
+                        self.metadata = loaded_data
             elif metadata_location.endswith((".pkl", ".pickle")):
                 with open(metadata_location, "rb") as f:
                     self.metadata = pickle.load(f)
@@ -213,8 +219,14 @@ class FAISSVectorSearcher:
             }
 
             # Attach document metadata if available
-            if self.metadata and 0 <= vector_id < len(self.metadata):
-                meta_item = self.metadata[vector_id]
+            meta_item = None
+            if self.metadata:
+                if isinstance(self.metadata, list) and 0 <= vector_id < len(self.metadata):
+                    meta_item = self.metadata[vector_id]
+                elif isinstance(self.metadata, dict):
+                    meta_item = self.metadata.get(vector_id) or self.metadata.get(str(vector_id))
+
+            if meta_item:
                 if isinstance(meta_item, dict):
                     result_entry["metadata"] = meta_item
                     result_entry["text"] = meta_item.get("text", "")

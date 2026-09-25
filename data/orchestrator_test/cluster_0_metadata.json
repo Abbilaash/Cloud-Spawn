@@ -1,0 +1,21 @@
+{
+  "cluster_id": 0,
+  "total_chunks": 2,
+  "dimension": 384,
+  "chunks": [
+    {
+      "chunk_id": "c0_chunk_0",
+      "document_id": "doc_physics",
+      "filename": "quantum_physics.docx",
+      "chunk_index": 0,
+      "text": "Quantum entanglement is a phenomenon where particles remain connected regardless of distance."
+    },
+    {
+      "chunk_id": "c0_chunk_1",
+      "document_id": "doc_physics",
+      "filename": "quantum_physics.docx",
+      "chunk_index": 1,
+      "text": "Superposition allows quantum bits to exist in multiple states simultaneously."
+    }
+  ]
+}
