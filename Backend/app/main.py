@@ -8,6 +8,7 @@ from app.core.logger_handler import system_log_handler
 from app.api.documents import router as documents_router
 from app.api.jobs import router as jobs_router
 from app.api.logs import router as logs_router
+from app.api.chat import router as chat_router
 
 # Configure standard logging
 logging.basicConfig(
@@ -53,6 +54,7 @@ app.add_middleware(
 app.include_router(documents_router)
 app.include_router(jobs_router)
 app.include_router(logs_router)
+app.include_router(chat_router)
 
 @app.get("/health", tags=["System"], status_code=status.HTTP_200_OK)
 async def health_check():

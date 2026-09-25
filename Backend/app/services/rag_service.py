@@ -2,6 +2,12 @@ import uuid
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+try:
+    from google import genai
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
+
 from openai import OpenAI
 from app.core.config import settings
 from app.core.database import db_manager
@@ -20,18 +26,14 @@ Answer the user's question using ONLY the provided document context below.
 
 class RAGService:
     def __init__(self):
-        self._llm_client: Optional[OpenAI] = None
+        self._llm_client: Any = None
 
-    def _get_llm_client(self) -> Optional[OpenAI]:
-        if not settings.LLM_API_KEY or settings.LLM_API_KEY == "your_llm_api_key_here":
-            logger.warning("LLM_API_KEY is not configured.")
+    def _get_api_key(self) -> Optional[str]:
+        api_key = settings.GEMINI_API_KEY or settings.LLM_API_KEY
+        if not api_key or api_key in ["your_llm_api_key_here", "your_gemini_api_key_here"]:
+            logger.warning("Neither GEMINI_API_KEY nor LLM_API_KEY is configured.")
             return None
-        if self._llm_client is None:
-            self._llm_client = OpenAI(
-                api_key=settings.LLM_API_KEY,
-                base_url=settings.LLM_BASE_URL if settings.LLM_BASE_URL else "https://api.openai.com/v1"
-            )
-        return self._llm_client
+        return api_key
 
     def process_chat(self, user_message: str, conversation_id: Optional[str] = None) -> Dict[str, Any]:
         conv_col = db_manager.get_conversations_collection()
@@ -79,25 +81,40 @@ class RAGService:
 
         context_str = "\n\n".join(context_blocks) if context_blocks else "No relevant document chunks found."
 
-        # 5. Call LLM
-        client = self._get_llm_client()
-        if not client:
+        # 5. Call LLM (Gemini)
+        api_key = self._get_api_key()
+        if not api_key:
             if sources:
-                answer = f"Retrieved {len(sources)} relevant context sources from indexed documents. (Note: LLM_API_KEY is not configured in .env. Top context snippet: {context_blocks[0][:250]}...)"
+                answer = f"Retrieved {len(sources)} relevant context sources from indexed documents. (Note: GEMINI_API_KEY / LLM_API_KEY is not configured in .env. Top context snippet: {context_blocks[0][:250]}...)"
             else:
                 answer = "I cannot find the answer to your question in the provided documents."
         else:
             try:
                 user_prompt = f"Context:\n{context_str}\n\nQuestion:\n{user_message}"
-                response = client.chat.completions.create(
-                    model=settings.LLM_MODEL,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    temperature=0.2
-                )
-                answer = response.choices[0].message.content.strip()
+                model_name = settings.LLM_MODEL or "gemini-3.6-flash"
+
+                if HAS_GENAI:
+                    client = genai.Client(api_key=api_key)
+                    full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=full_prompt
+                    )
+                    answer = response.text.strip()
+                else:
+                    client = OpenAI(
+                        api_key=api_key,
+                        base_url=settings.LLM_BASE_URL if settings.LLM_BASE_URL else "https://generativelanguage.googleapis.com/v1beta/openai/"
+                    )
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        temperature=0.2
+                    )
+                    answer = response.choices[0].message.content.strip()
             except Exception as e:
                 logger.error(f"Error calling LLM API: {str(e)}")
                 answer = f"Error generating answer from LLM: {str(e)}"

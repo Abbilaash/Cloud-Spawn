@@ -23,12 +23,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("docx-splitter")
 
+# Ensure Backend path is in sys.path so 'app' package can be imported
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Backend"))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 try:
     from app.core.logger_handler import system_log_handler
     if system_log_handler not in logger.handlers:
         logger.addHandler(system_log_handler)
-except Exception:
-    pass
+except Exception as e:
+    logger.warning(f"Could not load system_log_handler: {e}")
 
 
 

@@ -2,15 +2,17 @@
 
 import Link from 'next/link'
 import { ChangeEvent, useState } from 'react'
-import { Check, FileText, Loader2, UploadCloud, X } from 'lucide-react'
+import { Check, FileText, Loader2, UploadCloud, X, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Shell, SectionEyebrow } from '@/components/cloudspawn-shell'
-import { buildKnowledgeBase, uploadDocuments } from '@/lib/api'
+import { buildKnowledgeBase, uploadDocuments, clearAllDocuments } from '@/lib/api'
 
 export default function UploadPage() {
   const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
+  const [purging, setPurging] = useState(false)
   const [error, setError] = useState('')
+  const [infoMessage, setInfoMessage] = useState('')
 
   const select = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []).filter((file) => {
@@ -18,6 +20,22 @@ export default function UploadPage() {
       return name.endsWith('.docx') || name.endsWith('.pdf')
     })
     setFiles((current) => [...current, ...selectedFiles])
+  }
+
+  const handlePurgeServerDocs = async () => {
+    if (!confirm('Are you sure you want to purge all stored documents from disk, S3, and database?')) return
+    setPurging(true)
+    setError('')
+    setInfoMessage('')
+    try {
+      const res = await clearAllDocuments()
+      setInfoMessage(res.message || 'All stored documents purged successfully.')
+      setFiles([])
+    } catch (err: any) {
+      setError(err?.message || 'Failed to purge documents.')
+    } finally {
+      setPurging(false)
+    }
   }
 
   const build = async () => {
@@ -88,13 +106,29 @@ export default function UploadPage() {
           </div>
         )}
 
+        {infoMessage && (
+          <div className="mt-5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400 flex items-center justify-between">
+            <span>{infoMessage}</span>
+          </div>
+        )}
+
         {error && (
           <div className="mt-5 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         )}
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex items-center justify-between gap-4">
+          <Button
+            variant="outline"
+            onClick={handlePurgeServerDocs}
+            disabled={purging || busy}
+            className="gap-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            {purging ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            Purge Server Documents & S3
+          </Button>
+
           <Button disabled={!files.length || busy} onClick={build}>
             {busy ? (
               <>

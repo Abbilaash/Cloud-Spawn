@@ -1,7 +1,7 @@
 import os
 import uuid
 import logging
-from typing import List
+from typing import List,Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from app.core.config import settings
 from app.core.database import db_manager
@@ -158,5 +158,90 @@ async def get_document_detail(document_id: str):
         uploaded_at=doc.get("uploaded_at"),
         job_id=job_id
     )
+
+
+from app.services.vector_service import vector_service
+
+@router.delete("", status_code=status.HTTP_200_OK)
+async def delete_all_documents():
+    """Purge all uploaded documents from disk, S3, vector store, and MongoDB."""
+    docs_col = db_manager.get_documents_collection()
+    jobs_col = db_manager.get_jobs_collection()
+
+    deleted_count = 0
+    # 1. Clean disk files
+    upload_dir = settings.UPLOAD_DIRECTORY
+    if os.path.exists(upload_dir):
+        for f in os.listdir(upload_dir):
+            if not f.startswith(".gitkeep"):
+                fp = os.path.join(upload_dir, f)
+                try:
+                    if os.path.isfile(fp):
+                        os.remove(fp)
+                except Exception as e:
+                    logger.warning(f"Could not remove file '{fp}': {e}")
+
+    # 2. Clean S3 bucket if configured
+    if settings.AWS_ACCESS_KEY_ID and settings.AWS_S3_BUCKET_NAME:
+        try:
+            import boto3
+            s3 = boto3.client(
+                "s3",
+                region_name=settings.AWS_REGION or "us-east-1",
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+            )
+            objects = s3.list_objects_v2(Bucket=settings.AWS_S3_BUCKET_NAME)
+            if "Contents" in objects:
+                delete_keys = [{"Key": obj["Key"]} for obj in objects["Contents"]]
+                s3.delete_objects(Bucket=settings.AWS_S3_BUCKET_NAME, Delete={"Objects": delete_keys})
+                logger.info(f"[S3 Cleanup] Deleted {len(delete_keys)} objects from S3 bucket '{settings.AWS_S3_BUCKET_NAME}'.")
+        except Exception as e:
+            logger.warning(f"[S3 Cleanup] S3 deletion notice: {e}")
+
+    # 3. Clean Vector Service
+    vector_service._store.clear()
+
+    # 4. Clean MongoDB
+    res = docs_col.delete_many({})
+    jobs_col.delete_many({})
+    deleted_count = res.deleted_count
+
+    logger.info(f"[Cleanup] Purged {deleted_count} document record(s) and cleared database.")
+    return {"status": "ok", "message": f"Successfully deleted {deleted_count} document(s) and purged all stores."}
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_200_OK)
+async def delete_document(document_id: str):
+    """Delete a single document from disk, S3, vector store, and MongoDB."""
+    docs_col = db_manager.get_documents_collection()
+    doc = docs_col.find_one({"document_id": document_id})
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found."
+        )
+
+    file_path = doc.get("file_path", "")
+    filename = doc.get("filename", "")
+
+    # 1. Delete file from disk
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            logger.info(f"[Cleanup] Removed file from disk: '{file_path}'")
+        except Exception as e:
+            logger.warning(f"Could not remove file '{file_path}': {e}")
+
+    # 2. Delete from Vector Service
+    vector_service.delete_document(document_id)
+
+    # 3. Delete from MongoDB
+    docs_col.delete_one({"document_id": document_id})
+
+    logger.info(f"[Cleanup] Deleted document '{filename}' (ID: {document_id}).")
+    return {"status": "ok", "message": f"Document '{filename}' deleted successfully."}
+
 
 
