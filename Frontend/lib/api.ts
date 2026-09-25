@@ -143,9 +143,22 @@ export function clearLogs() {
   })
 }
 
+export function deleteDocument(documentId: string) {
+  return request<{ status: string; message: string }>(`/api/documents/${documentId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function clearAllDocuments() {
+  return request<{ status: string; message: string }>('/api/documents', {
+    method: 'DELETE',
+  })
+}
+
 export function sendChatMessage(message: string, conversationId?: string) {
   return request<ChatResponse>('/api/chat', {
     method: 'POST',
     body: JSON.stringify({ message, conversation_id: conversationId }),
   })
 }
+

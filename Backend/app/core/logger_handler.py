@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime, timezone
 from collections import deque
 from typing import List, Dict, Any
@@ -13,7 +14,7 @@ class SystemLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         try:
             log_entry = {
-                "id": f"{record.created}-{record.msecs}",
+                "id": f"{record.created}-{record.msecs}-{uuid.uuid4().hex[:6]}",
                 "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
                 "level": record.levelname,
                 "logger": record.name,

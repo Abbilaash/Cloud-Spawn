@@ -31,7 +31,7 @@ class TextVectorizer:
         self.model_name: str = model_name
         self.device: Optional[str] = device
         self.normalize_embeddings: bool = normalize_embeddings
-        self._model: Optional[Any] = None
+        self._model: Optional[any] = None
 
     def _load_model(self):
         if self._model is not None:

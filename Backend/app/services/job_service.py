@@ -97,44 +97,87 @@ def process_knowledge_base_build_job(job_id: str):
             logger.error(f"[Formicx Agent] Failed to execute Formicx docx-splitter agent: {str(exc)}", exc_info=True)
             cluster_result = {"status": "failed", "clusters": [], "cluster_count": 0}
 
-    # 3. Finalize Job & Document Statuses in MongoDB
-    completed_iso = datetime.now(timezone.utc).isoformat()
-    is_success = cluster_result.get("status") == "success"
-    final_status = JobStatus.COMPLETED if is_success else JobStatus.FAILED
-
+    # 3. AWS Lambda Worker Invocation per Cluster
     clusters = cluster_result.get("clusters", [])
     cluster_count = cluster_result.get("cluster_count", 0)
+    is_clustering_success = cluster_result.get("status") == "success"
 
-    # Map filename -> cluster_id
+    # Map filename -> document_id and filename -> cluster_id
+    doc_filename_id_map: Dict[str, str] = {}
     doc_cluster_map: Dict[str, int] = {}
+
+    for doc_id in document_ids:
+        doc_record = docs_col.find_one({"document_id": doc_id})
+        if doc_record and doc_record.get("filename"):
+            doc_filename_id_map[doc_record.get("filename")] = doc_id
+
     for cl in clusters:
         c_id = cl.get("cluster_id", 0)
         for doc_name in cl.get("documents", []):
             doc_cluster_map[doc_name] = c_id
+
+    embedding_summary: Dict[str, Any] = {"status": "failed", "total_chunks_vectorized": 0, "cluster_results": []}
+
+    if is_clustering_success and clusters:
+        docs_col.update_many(
+            {"document_id": {"$in": document_ids}},
+            {"$set": {"processing_step": "Embedding Chunks via AWS Lambda Workers"}}
+        )
+        logger.info(f"[MongoDB] Updated processing step to 'Embedding Chunks via AWS Lambda Workers' for {total_docs} document(s).")
+
+        try:
+            from app.services.lambda_dispatcher import lambda_dispatcher
+            logger.info(f"[AWS Lambda Runner] Dispatching {len(clusters)} dynamic cluster(s) to Lambda workers...")
+            embedding_summary = lambda_dispatcher.dispatch_clusters(
+                job_id=job_id,
+                clusters=clusters,
+                upload_dir=upload_dir,
+                doc_filename_id_map=doc_filename_id_map
+            )
+            logger.info(f"[AWS Lambda Runner] Completed Lambda worker execution: {embedding_summary.get('successful_clusters', 0)}/{len(clusters)} clusters succeeded.")
+        except Exception as exc:
+            logger.error(f"[AWS Lambda Runner] Error during Lambda worker dispatch: {str(exc)}", exc_info=True)
+            embedding_summary = {"status": "failed", "error": str(exc), "total_chunks_vectorized": 0, "cluster_results": []}
+
+    # 4. Finalize Job & Document Statuses in MongoDB
+    completed_iso = datetime.now(timezone.utc).isoformat()
+    is_embedding_success = embedding_summary.get("status") in ["success", "partial_success"]
+    is_overall_success = is_clustering_success and is_embedding_success
+    final_status = JobStatus.COMPLETED if is_overall_success else JobStatus.FAILED
+
+    # Build cluster index result map (cluster_id -> faiss index details)
+    cluster_index_map: Dict[int, Dict[str, Any]] = {}
+    for c_res in embedding_summary.get("cluster_results", []):
+        c_id = c_res.get("cluster_id")
+        if c_id is not None:
+            cluster_index_map[c_id] = c_res
 
     # Update Job record in MongoDB
     jobs_col.update_one(
         {"job_id": job_id},
         {"$set": {
             "status": final_status,
-            "processed_documents": total_docs if is_success else 0,
-            "failed_documents": 0 if is_success else total_docs,
-            "progress": 100 if is_success else 0,
+            "processed_documents": total_docs if is_overall_success else 0,
+            "failed_documents": 0 if is_overall_success else total_docs,
+            "progress": 100 if is_overall_success else 0,
             "cluster_count": cluster_count,
             "clusters": clusters,
+            "total_chunks_vectorized": embedding_summary.get("total_chunks_vectorized", 0),
+            "lambda_embedding_summary": embedding_summary,
             "completed_at": completed_iso
         }}
     )
-    logger.info(f"[MongoDB] Updated build job {job_id} record in 'jobs' collection. Status: '{final_status}', Clusters: {cluster_count}.")
+    logger.info(f"[MongoDB] Updated build job {job_id} record in 'jobs' collection. Status: '{final_status}', Clusters: {cluster_count}, Chunks Vectorized: {embedding_summary.get('total_chunks_vectorized', 0)}.")
 
     # Update Document records with telemetry and cluster ID assignments in MongoDB
-    final_doc_status = DocumentStatus.COMPLETED if is_success else DocumentStatus.FAILED
+    final_doc_status = DocumentStatus.COMPLETED if is_overall_success else DocumentStatus.FAILED
     for doc_id in document_ids:
         doc_record = docs_col.find_one({"document_id": doc_id})
         filename = doc_record.get("filename", "") if doc_record else ""
         c_id = doc_cluster_map.get(filename)
+        c_index_info = cluster_index_map.get(c_id, {}) if c_id is not None else {}
         
-        step_text = f"Formicx Partitioned (Cluster #{c_id})" if (is_success and c_id is not None) else ("Formicx Partitioned" if is_success else "Processing Failed")
+        step_text = f"Vectorized & Indexed (AWS Lambda Worker - Cluster #{c_id})" if (is_overall_success and c_id is not None) else ("Formicx Partitioned" if is_clustering_success else "Processing Failed")
         
         update_fields: Dict[str, Any] = {
             "status": final_doc_status,
@@ -142,6 +185,10 @@ def process_knowledge_base_build_job(job_id: str):
         }
         if c_id is not None:
             update_fields["cluster_id"] = c_id
+        if c_index_info.get("index_file_path"):
+            update_fields["faiss_index_path"] = c_index_info.get("index_file_path")
+        if c_index_info.get("metadata_file_path"):
+            update_fields["faiss_metadata_path"] = c_index_info.get("metadata_file_path")
 
         docs_col.update_one(
             {"document_id": doc_id},
@@ -149,6 +196,6 @@ def process_knowledge_base_build_job(job_id: str):
         )
         logger.info(f"[MongoDB] Updated document '{filename}' (ID: {doc_id}) in 'documents' collection. Status: '{final_doc_status}', Cluster: #{c_id if c_id is not None else 'N/A'}.")
 
-    logger.info(f"[Job Runner] Build job {job_id} finalized with status: '{final_status}' ({cluster_count} dynamic clusters).")
+    logger.info(f"[Job Runner] Build job {job_id} finalized with status: '{final_status}' ({cluster_count} dynamic clusters, {embedding_summary.get('total_chunks_vectorized', 0)} chunks vectorized by AWS Lambda workers).")
 
 

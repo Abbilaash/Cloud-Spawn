@@ -136,11 +136,10 @@ export default function LogsPage() {
               <button
                 key={lvl}
                 onClick={() => setFilterLevel(lvl)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  filterLevel === lvl
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${filterLevel === lvl
                     ? 'bg-primary text-primary-foreground'
                     : 'border bg-muted/30 text-muted-foreground hover:bg-muted'
-                }`}
+                  }`}
               >
                 {lvl}
               </button>
@@ -192,13 +191,12 @@ export default function LogsPage() {
                   <div key={log.id} className="flex items-start gap-3 hover:bg-slate-900/50 p-1 rounded">
                     <span className="text-slate-500 shrink-0">{timeStr}</span>
                     <span
-                      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${
-                        isInfo
+                      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${isInfo
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                           : isWarn
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                      }`}
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}
                     >
                       {log.level}
                     </span>
