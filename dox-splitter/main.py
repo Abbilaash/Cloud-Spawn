@@ -55,16 +55,36 @@ class DocumentSplitterAgent(Agent):
             return ""
 
     def _extract_text_from_pdf(self, file_path: str) -> str:
+        page_texts = []
+        # 1. Attempt pypdf with strict=False
         try:
-            reader = pypdf.PdfReader(file_path)
-            page_texts = []
+            reader = pypdf.PdfReader(file_path, strict=False)
             for page in reader.pages:
-                text = page.extract_text()
-                if text and text.strip():
-                    page_texts.append(text.strip())
-            return " ".join(page_texts)
+                try:
+                    text = page.extract_text()
+                    if text and text.strip():
+                        page_texts.append(text.strip())
+                except Exception as pe:
+                    logger.warning(f"Notice extracting PDF page text from '{file_path}': {str(pe)}")
+            if page_texts:
+                return " ".join(page_texts)
         except Exception as e:
-            logger.error(f"Error reading PDF file {file_path}: {str(e)}")
+            logger.warning(f"pypdf reader notice for PDF file '{file_path}': {str(e)}")
+
+        # 2. Binary stream fallback with strict=False
+        try:
+            with open(file_path, "rb") as f:
+                reader = pypdf.PdfReader(f, strict=False)
+                for page in reader.pages:
+                    try:
+                        text = page.extract_text()
+                        if text and text.strip():
+                            page_texts.append(text.strip())
+                    except Exception:
+                        pass
+            return " ".join(page_texts)
+        except Exception as e2:
+            logger.error(f"Error reading PDF file {file_path}: {str(e2)}")
             return ""
 
     def process_document_clustering(
