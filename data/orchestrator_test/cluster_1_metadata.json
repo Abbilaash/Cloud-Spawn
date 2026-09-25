@@ -1,0 +1,21 @@
+{
+  "cluster_id": 1,
+  "total_chunks": 2,
+  "dimension": 384,
+  "chunks": [
+    {
+      "chunk_id": "c1_chunk_0",
+      "document_id": "doc_distributed",
+      "filename": "formicx_agents.docx",
+      "chunk_index": 0,
+      "text": "Formicx provides inter-process agent communication and workflow orchestration across distributed clusters."
+    },
+    {
+      "chunk_id": "c1_chunk_1",
+      "document_id": "doc_distributed",
+      "filename": "formicx_agents.docx",
+      "chunk_index": 1,
+      "text": "The vector orchestrator agent aggregates vector embeddings from multiple serverless Lambda container workers."
+    }
+  ]
+}
