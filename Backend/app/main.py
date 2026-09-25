@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, status
+from fastapi import FastAPI, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import db_manager
@@ -55,6 +55,11 @@ app.include_router(documents_router)
 app.include_router(jobs_router)
 app.include_router(logs_router)
 app.include_router(chat_router)
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Favicon endpoint to prevent 404 log entries when accessed via browser."""
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 @app.get("/health", tags=["System"], status_code=status.HTTP_200_OK)
 async def health_check():
