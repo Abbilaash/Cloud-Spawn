@@ -53,15 +53,26 @@ class VectorService:
         logger.info(f"[Vector Service] Delete document request received for document_id: {document_id}")
 
     def clear(self):
-        faiss_dir = os.path.abspath(settings.FAISS_OUTPUT_DIRECTORY)
-        if os.path.exists(faiss_dir):
-            for f in os.listdir(faiss_dir):
-                fp = os.path.join(faiss_dir, f)
-                try:
-                    if os.path.isfile(fp):
-                        os.remove(fp)
-                except Exception as e:
-                    logger.warning(f"Could not remove FAISS index file '{fp}': {e}")
+        import shutil
+        dirs_to_clean = [
+            os.path.abspath(settings.FAISS_OUTPUT_DIRECTORY),
+            os.path.abspath("./data/vector_db"),
+            os.path.abspath("./data/chroma"),
+            os.path.abspath("./data/s3_cache")
+        ]
+        for d in dirs_to_clean:
+            if os.path.exists(d):
+                for f in os.listdir(d):
+                    fp = os.path.join(d, f)
+                    try:
+                        if os.path.isfile(fp) or os.path.islink(fp):
+                            os.remove(fp)
+                        elif os.path.isdir(fp):
+                            shutil.rmtree(fp)
+                    except Exception as e:
+                        logger.warning(f"[Vector Service] Could not remove vector artifact '{fp}': {e}")
+                logger.info(f"[Vector Service] Cleared vector database storage directory: '{d}'")
 
 vector_service = VectorService()
+
 

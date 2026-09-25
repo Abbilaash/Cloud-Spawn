@@ -21,3 +21,7 @@ Backend/data/uploads/*
 !Backend/data/uploads/.gitkeep
 Backend/data/chroma/*
 !Backend/data/chroma/.gitkeep
+Backend/data/faiss_indexes/*
+!Backend/data/faiss_indexes/.gitkeep
+data/
+

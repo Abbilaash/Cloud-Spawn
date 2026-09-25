@@ -1,12 +1,14 @@
 import os
 import uuid
 import logging
-from typing import List,Optional
+import shutil
+from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from app.core.config import settings
 from app.core.database import db_manager
 from app.models.document import create_document_model, DocumentStatus
-from app.schemas.document import UploadResponse, DocumentItem
+from app.schemas.document import UploadResponse, DocumentItem, DocumentDetailResponse
+from app.services.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +24,11 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             detail="No files uploaded."
         )
 
-    logger.info(f"[File Upload] Starting upload processing for {len(files)} file(s). Purging previous documents...")
+    logger.info(f"[File Upload] Starting upload processing for {len(files)} file(s). Purging previous documents, vector FAISS DBs, and MongoDB collections...")
     upload_dir = settings.UPLOAD_DIRECTORY
-    faiss_dir = settings.FAISS_OUTPUT_DIRECTORY
     docs_col = db_manager.get_documents_collection()
     jobs_col = db_manager.get_jobs_collection()
+    convs_col = db_manager.get_conversations_collection()
 
     # 1. Purge previous uploaded files from disk
     if os.path.exists(upload_dir):
@@ -34,26 +36,34 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             if not f.startswith(".gitkeep"):
                 fp = os.path.join(upload_dir, f)
                 try:
-                    if os.path.isfile(fp):
+                    if os.path.isfile(fp) or os.path.islink(fp):
                         os.remove(fp)
+                    elif os.path.isdir(fp):
+                        shutil.rmtree(fp)
                 except Exception as e:
                     logger.warning(f"[File Upload Cleanup] Could not remove file '{fp}': {e}")
     os.makedirs(upload_dir, exist_ok=True)
 
-    # 2. Purge previous FAISS index files
-    if os.path.exists(faiss_dir):
-        for f in os.listdir(faiss_dir):
-            fp = os.path.join(faiss_dir, f)
-            try:
-                if os.path.isfile(fp):
-                    os.remove(fp)
-            except Exception as e:
-                logger.warning(f"[File Upload Cleanup] Could not remove FAISS file '{fp}': {e}")
+    # 2. Purge previous local FAISS & vector DB indices
+    vector_service.clear()
 
-    # 3. Purge previous document and job records from MongoDB
-    purged_res = docs_col.delete_many({})
-    jobs_col.delete_many({})
-    logger.info(f"[File Upload Cleanup] Purged {purged_res.deleted_count} previous document record(s) and job histories from MongoDB.")
+    # 3. Purge previous document, job, and conversation records from MongoDB
+    purged_docs = docs_col.delete_many({})
+    purged_jobs = jobs_col.delete_many({})
+    purged_convs = convs_col.delete_many({})
+
+    # Purge any dynamic vector collections in MongoDB if present
+    db = db_manager.get_db()
+    for col_name in ["vector_db", "faiss_indexes", "vectors", "chunks"]:
+        if col_name in db.list_collection_names():
+            db[col_name].delete_many({})
+
+    logger.info(
+        f"[File Upload Cleanup] Purged {purged_docs.deleted_count} document(s), "
+        f"{purged_jobs.deleted_count} job(s), {purged_convs.deleted_count} conversation(s), "
+        f"and all vector FAISS DB stores from MongoDB and local storage."
+    )
+
 
     uploaded_docs: List[DocumentItem] = []
 
@@ -188,13 +198,12 @@ async def get_document_detail(document_id: str):
     )
 
 
-from app.services.vector_service import vector_service
-
 @router.delete("", status_code=status.HTTP_200_OK)
 async def delete_all_documents():
     """Purge all uploaded documents from disk, S3, vector store, and MongoDB."""
     docs_col = db_manager.get_documents_collection()
     jobs_col = db_manager.get_jobs_collection()
+    convs_col = db_manager.get_conversations_collection()
 
     deleted_count = 0
     # 1. Clean disk files
@@ -204,8 +213,10 @@ async def delete_all_documents():
             if not f.startswith(".gitkeep"):
                 fp = os.path.join(upload_dir, f)
                 try:
-                    if os.path.isfile(fp):
+                    if os.path.isfile(fp) or os.path.islink(fp):
                         os.remove(fp)
+                    elif os.path.isdir(fp):
+                        shutil.rmtree(fp)
                 except Exception as e:
                     logger.warning(f"Could not remove file '{fp}': {e}")
 
@@ -227,16 +238,23 @@ async def delete_all_documents():
         except Exception as e:
             logger.warning(f"[S3 Cleanup] S3 deletion notice: {e}")
 
-    # 3. Clean Vector Service
-    vector_service._store.clear()
+    # 3. Clean Vector Service (Local FAISS DB files, master indices, metadata maps, vector_db, chroma)
+    vector_service.clear()
 
     # 4. Clean MongoDB
     res = docs_col.delete_many({})
     jobs_col.delete_many({})
+    convs_col.delete_many({})
+
+    db = db_manager.get_db()
+    for col_name in ["vector_db", "faiss_indexes", "vectors", "chunks"]:
+        if col_name in db.list_collection_names():
+            db[col_name].delete_many({})
+
     deleted_count = res.deleted_count
 
-    logger.info(f"[Cleanup] Purged {deleted_count} document record(s) and cleared database.")
-    return {"status": "ok", "message": f"Successfully deleted {deleted_count} document(s) and purged all stores."}
+    logger.info(f"[Cleanup] Purged {deleted_count} document record(s), conversations, jobs, and vector FAISS DBs from MongoDB and local storage.")
+    return {"status": "ok", "message": f"Successfully deleted {deleted_count} document(s) and purged all vector stores."}
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_200_OK)
@@ -257,7 +275,8 @@ async def delete_document(document_id: str):
     # 1. Delete file from disk
     if file_path and os.path.exists(file_path):
         try:
-            os.remove(file_path)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
             logger.info(f"[Cleanup] Removed file from disk: '{file_path}'")
         except Exception as e:
             logger.warning(f"Could not remove file '{file_path}': {e}")
@@ -279,8 +298,24 @@ async def delete_document(document_id: str):
     # 3. Delete from MongoDB
     docs_col.delete_one({"document_id": document_id})
 
+    # If no documents remain, purge all remaining jobs, conversations, and vector DB indices
+    if docs_col.count_documents({}) == 0:
+        jobs_col = db_manager.get_jobs_collection()
+        convs_col = db_manager.get_conversations_collection()
+        jobs_col.delete_many({})
+        convs_col.delete_many({})
+        vector_service.clear()
+
+        db = db_manager.get_db()
+        for col_name in ["vector_db", "faiss_indexes", "vectors", "chunks"]:
+            if col_name in db.list_collection_names():
+                db[col_name].delete_many({})
+
+        logger.info("[Cleanup] Final document removed. Cleared all jobs, conversations, and vector FAISS DB stores.")
+
     logger.info(f"[Cleanup] Deleted document '{filename}' (ID: {document_id}).")
     return {"status": "ok", "message": f"Document '{filename}' deleted successfully."}
+
 
 
 
