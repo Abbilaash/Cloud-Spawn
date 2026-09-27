@@ -122,6 +122,9 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 filename=filename,
                 status=DocumentStatus.UPLOADED,
                 file_size=file_size,
+                file_path=destination_path,
+                s3_key=s3_key,
+                s3_uri=doc_model.get("s3_uri"),
                 uploaded_at=doc_model["uploaded_at"]
             ))
 
@@ -156,6 +159,11 @@ async def list_documents():
             status=doc.get("status", DocumentStatus.UPLOADED),
             file_size=doc.get("file_size"),
             file_type=doc.get("file_type"),
+            file_path=doc.get("file_path"),
+            s3_key=doc.get("s3_key"),
+            s3_uri=doc.get("s3_uri"),
+            s3_faiss_index_uri=doc.get("s3_faiss_index_uri"),
+            s3_faiss_metadata_uri=doc.get("s3_faiss_metadata_uri"),
             processing_step=doc.get("processing_step"),
             cluster_id=doc.get("cluster_id"),
             uploaded_at=doc.get("uploaded_at")
@@ -200,6 +208,11 @@ async def get_document_detail(document_id: str):
         filename=doc.get("filename", ""),
         file_type=doc.get("file_type"),
         file_size=doc.get("file_size"),
+        file_path=doc.get("file_path"),
+        s3_key=doc.get("s3_key"),
+        s3_uri=doc.get("s3_uri"),
+        s3_faiss_index_uri=doc.get("s3_faiss_index_uri"),
+        s3_faiss_metadata_uri=doc.get("s3_faiss_metadata_uri"),
         status=doc.get("status", DocumentStatus.UPLOADED),
         processing_step=doc.get("processing_step", "Uploaded"),
         cluster_id=cluster_id,

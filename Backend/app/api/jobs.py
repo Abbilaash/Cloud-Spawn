@@ -79,6 +79,11 @@ async def get_job_status(job_id: str):
                 "filename": doc.get("filename"),
                 "file_type": doc.get("file_type"),
                 "file_size_bytes": doc.get("file_size_bytes"),
+                "file_path": doc.get("file_path"),
+                "s3_key": doc.get("s3_key"),
+                "s3_uri": doc.get("s3_uri"),
+                "s3_faiss_index_uri": doc.get("s3_faiss_index_uri"),
+                "s3_faiss_metadata_uri": doc.get("s3_faiss_metadata_uri"),
                 "status": doc.get("status", "pending"),
                 "processing_step": doc.get("processing_step", "Queued"),
                 "cluster_id": doc.get("cluster_id")
