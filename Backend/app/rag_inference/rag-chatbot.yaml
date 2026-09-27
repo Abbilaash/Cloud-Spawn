@@ -1,0 +1,202 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudspawn-rag
+  labels:
+    cloudspawn.io/managed: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatbot-script
+  namespace: cloudspawn-rag
+data:
+  server.py: |
+    import os
+    import json
+    import httpx
+    import uvicorn
+    from fastapi import FastAPI, HTTPException
+    from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel
+    from typing import Optional
+    from groq import Groq
+
+    app = FastAPI(title="CloudSpawn RAG Chatbot", version="1.0.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    BACKEND_RAG_URL = os.getenv("BACKEND_RAG_URL", "http://cloudspawn-backend-service.default.svc.cluster.local:8000/api/rag/search")
+
+    SYSTEM_PROMPT = """You are CloudSpawn Copilot — an intelligent grounded AI assistant.
+    CloudSpawn is a system that discovers, indexes, and orchestrates RAG document knowledge bases across Kubernetes clusters.
+
+    You will be given a CONTEXT block containing real-time document data retrieved from the CloudSpawn system.
+    Use this data to answer questions accurately. If the data doesn't contain the answer, say so clearly.
+
+    Format your responses using markdown when helpful:
+    - Use **bold** for emphasis on important values
+    - Use bullet lists for listing multiple items
+    - Use code blocks for technical details like document IDs or file paths
+    - Use tables when comparing multiple documents
+
+    Be concise, accurate, and helpful. Always refer to the live data from the CONTEXT block.
+    """
+
+    class ChatRequest(BaseModel):
+        text: str
+        context: Optional[str] = "No additional context provided."
+
+    class ChatResponse(BaseModel):
+        response: str
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok", "service": "cloudspawn-rag-chatbot"}
+
+    @app.post("/chat", response_model=ChatResponse)
+    async def chat(payload: ChatRequest):
+        groq_key = os.getenv("GROQ_API_KEY", "")
+        if not groq_key or groq_key == "YOUR_GROQ_API_KEY":
+            raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured.")
+        
+        # 1. Fetch RAG Context from Backend RAG Search API if available
+        rag_snippets = []
+        if payload.text and BACKEND_RAG_URL:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as http_client:
+                    res = await http_client.post(
+                        BACKEND_RAG_URL,
+                        json={"query": payload.text, "top_k": 5}
+                    )
+                    if res.status_code == 200:
+                        results = res.json().get("results", [])
+                        for item in results:
+                            filename = item.get("filename", "unknown")
+                            text = item.get("text", "")
+                            chunk_idx = item.get("chunk_index", 0)
+                            rag_snippets.append(f"--- Document: {filename} (Chunk #{chunk_idx}) ---\n{text}")
+            except Exception as err:
+                print(f"Notice: Could not fetch backend RAG context: {err}")
+
+        retrieved_context_str = "\n\n".join(rag_snippets) if rag_snippets else "No RAG document snippets found."
+        user_context = payload.context.strip() if payload.context else ""
+
+        context_block = f"""
+    === LIVE CLOUDSPAWN RAG CONTEXT ===
+    {retrieved_context_str}
+
+    === ADDITIONAL CONTEXT ===
+    {user_context}
+    ===================================
+    """
+        try:
+            client = Groq(api_key=groq_key)
+            completion = client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context_block},
+                    {"role": "user", "content": payload.text}
+                ],
+                temperature=1,
+                max_completion_tokens=2048,
+                top_p=1,
+                reasoning_effort="medium",
+                stream=False,
+            )
+            answer = completion.choices[0].message.content or ""
+            return ChatResponse(response=answer)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Groq API error: {str(e)}")
+
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8081)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudspawn-chatbot
+  namespace: cloudspawn-rag
+  labels:
+    app.kubernetes.io/name: cloudspawn-chatbot
+    app.kubernetes.io/version: "1.0.0"
+    cloudspawn.io/asset-type: agent
+  annotations:
+    cloudspawn.io/owner: platform-team
+    cloudspawn.io/description: "CloudSpawn Copilot — Groq-powered assistant for RAG document context"
+    cloudspawn.io/model: openai/gpt-oss-120b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudspawn-chatbot
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudspawn-chatbot
+        cloudspawn.io/asset-type: agent
+    spec:
+      containers:
+        - name: chatbot-agent
+          image: python:3.11-slim
+          command:
+            - "sh"
+            - "-c"
+            - "pip install --quiet fastapi uvicorn groq pydantic httpx && python /app/server.py"
+          ports:
+            - containerPort: 8081
+              name: http
+          volumeMounts:
+            - name: chatbot-script
+              mountPath: /app
+          env:
+            - name: GROQ_API_KEY
+              value: "YOUR_GROQ_API_KEY" # Replace with your Groq API key (e.g., gsk_...)
+            - name: BACKEND_RAG_URL
+              value: "http://cloudspawn-backend-service.default.svc.cluster.local:8000/api/rag/search"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: chatbot-script
+          configMap:
+            name: chatbot-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudspawn-chatbot-service
+  namespace: cloudspawn-rag
+  labels:
+    app.kubernetes.io/name: cloudspawn-chatbot
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8081
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: cloudspawn-chatbot
