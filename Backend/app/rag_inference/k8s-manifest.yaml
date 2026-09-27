@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: groq-api-secret
+  namespace: default
+type: Opaque
+stringData:
+  GROQ_API_KEY: "YOUR_GROQ_API_KEY"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudspawn-rag-config
+  namespace: default
+data:
+  BACKEND_RAG_URL: "http://cloudspawn-backend-service.default.svc.cluster.local:8000/api/rag/search"
+  GROQ_MODEL: "openai/gpt-oss-120b"
+  PORT: "5000"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudspawn-rag-inference
+  namespace: default
+  labels:
+    app: cloudspawn-rag-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudspawn-rag-inference
+  template:
+    metadata:
+      labels:
+        app: cloudspawn-rag-inference
+    spec:
+      containers:
+      - name: rag-inference-app
+        image: cloudspawn-rag-inference:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+          name: http
+        env:
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: groq-api-secret
+              key: GROQ_API_KEY
+        - name: BACKEND_RAG_URL
+          valueFrom:
+            configMapKeyRef:
+              name: cloudspawn-rag-config
+              key: BACKEND_RAG_URL
+        - name: GROQ_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: cloudspawn-rag-config
+              key: GROQ_MODEL
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: cloudspawn-rag-config
+              key: PORT
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudspawn-rag-inference-service
+  namespace: default
+  labels:
+    app: cloudspawn-rag-inference
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: cloudspawn-rag-inference
