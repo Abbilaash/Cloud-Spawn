@@ -135,4 +135,28 @@ class RAGService:
             "sources": sources
         }
 
+    def search_context(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """Embeds input query string and searches master FAISS vector DB for nearest matching text chunks."""
+        if not query or not query.strip():
+            return []
+
+        logger.info(f"[RAG Service] Executing vector similarity search for query: '{query[:60]}...' (top_k={top_k})")
+        query_embedding = embedding_service.embed_text(query.strip())
+        matched_chunks = vector_service.search(query_embedding, top_k=top_k)
+        
+        results = []
+        for r in matched_chunks:
+            results.append({
+                "chunk_id": r.get("chunk_id", ""),
+                "document_id": r.get("document_id", ""),
+                "filename": r.get("filename", "unknown"),
+                "chunk_index": r.get("chunk_index", 0),
+                "text": r.get("text", ""),
+                "score": float(r.get("score", 0.0))
+            })
+
+        logger.info(f"[RAG Service] RAG vector search complete. Found {len(results)} matching chunk(s).")
+        return results
+
 rag_service = RAGService()
+

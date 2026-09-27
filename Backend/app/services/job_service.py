@@ -88,7 +88,13 @@ def process_knowledge_base_build_job(job_id: str):
     if not cluster_result or cluster_result.get("status") != "success":
         try:
             logger.info("[Formicx Agent] Executing DocumentSplitterAgent instance directly...")
-            from main import DocumentSplitterAgent
+            import importlib.util
+            splitter_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../dox-splitter/main.py"))
+            spec = importlib.util.spec_from_file_location("dox_splitter_mod", splitter_file)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            DocumentSplitterAgent = mod.DocumentSplitterAgent
+
             agent = DocumentSplitterAgent()
             agent.on_start()
             cluster_result = agent.process_document_clustering(folder_path=upload_dir, distance_threshold=0.6)
@@ -178,11 +184,13 @@ def process_knowledge_base_build_job(job_id: str):
 
                 # 2. Fallback: Direct VectorOrchestratorAgent Invocation
                 if not orch_result or orch_result.get("status") != "success":
-                    vector_orchestration_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../vector-orchestrator"))
-                    if vector_orchestration_dir not in sys.path:
-                        sys.path.insert(0, vector_orchestration_dir)
-                    
-                    from main import VectorOrchestratorAgent
+                    import importlib.util
+                    orchestration_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../vector-orchestrator/main.py"))
+                    spec = importlib.util.spec_from_file_location("vector_orchestrator_mod", orchestration_file)
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    VectorOrchestratorAgent = mod.VectorOrchestratorAgent
+
                     orchestrator = VectorOrchestratorAgent()
                     orchestrator.on_start()
                     orch_result = orchestrator.orchestrate_clusters(

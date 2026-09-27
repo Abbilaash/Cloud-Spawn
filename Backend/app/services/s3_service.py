@@ -39,6 +39,27 @@ class S3StorageService:
     def is_configured(self) -> bool:
         return bool(settings.s3_access_key and settings.s3_secret_key and settings.AWS_S3_BUCKET_NAME)
 
+    def _ensure_bucket_exists(self, client, bucket_name: str) -> bool:
+        try:
+            client.head_bucket(Bucket=bucket_name)
+            return True
+        except Exception:
+            try:
+                region = settings.s3_region or "eu-north-1"
+                logger.info(f"[S3 Storage] Bucket '{bucket_name}' not found. Attempting to create bucket in region '{region}'...")
+                if region == "us-east-1":
+                    client.create_bucket(Bucket=bucket_name)
+                else:
+                    client.create_bucket(
+                        Bucket=bucket_name,
+                        CreateBucketConfiguration={"LocationConstraint": region}
+                    )
+                logger.info(f"[S3 Storage] Successfully created S3 bucket '{bucket_name}'.")
+                return True
+            except Exception as create_err:
+                logger.warning(f"[S3 Storage] Could not auto-create S3 bucket '{bucket_name}': {create_err}")
+                return False
+
     def upload_file_bytes(self, content: bytes, s3_key: str, content_type: Optional[str] = None) -> Optional[str]:
         """Uploads raw binary content to S3 bucket. Returns S3 URI / key on success."""
         client = self.get_client()
@@ -48,11 +69,11 @@ class S3StorageService:
             logger.warning(f"[S3 Storage] S3 client or bucket name missing. Skipping S3 upload for key '{s3_key}'.")
             return None
 
-        try:
-            extra_args = {}
-            if content_type:
-                extra_args["ContentType"] = content_type
+        extra_args = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
 
+        try:
             client.put_object(
                 Bucket=bucket_name,
                 Key=s3_key,
@@ -63,7 +84,16 @@ class S3StorageService:
             logger.info(f"[S3 Storage] Successfully uploaded {len(content)} bytes to '{s3_uri}'.")
             return s3_uri
         except Exception as e:
-            logger.error(f"[S3 Storage] Failed to upload object '{s3_key}' to S3 bucket '{bucket_name}': {e}", exc_info=True)
+            if "NoSuchBucket" in str(e):
+                if self._ensure_bucket_exists(client, bucket_name):
+                    try:
+                        client.put_object(Bucket=bucket_name, Key=s3_key, Body=content, **extra_args)
+                        s3_uri = f"s3://{bucket_name}/{s3_key}"
+                        logger.info(f"[S3 Storage] Successfully uploaded {len(content)} bytes to '{s3_uri}' after bucket creation.")
+                        return s3_uri
+                    except Exception as retry_err:
+                        logger.error(f"[S3 Storage] Retry upload failed for '{s3_key}': {retry_err}")
+            logger.error(f"[S3 Storage] Failed to upload object '{s3_key}' to S3 bucket '{bucket_name}': {e}")
             return None
 
     def upload_file_from_disk(self, local_path: str, s3_key: str) -> Optional[str]:

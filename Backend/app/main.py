@@ -9,6 +9,7 @@ from app.api.documents import router as documents_router
 from app.api.jobs import router as jobs_router
 from app.api.logs import router as logs_router
 from app.api.chat import router as chat_router
+from app.api.rag import router as rag_router
 
 # Configure standard logging
 logging.basicConfig(
@@ -34,6 +35,7 @@ app = FastAPI(
     openapi_tags=[
         {"name": "Documents", "description": "DOCX/PDF Document Upload & Metadata Management"},
         {"name": "Jobs", "description": "Document Splitting & Formicx Agent Task Orchestration"},
+        {"name": "RAG Search Engine", "description": "API Vector Context Retrieval for Kubernetes Clusters & Microservices"},
         {"name": "System Logs", "description": "Real-time System & Formicx Agent Execution Logs"},
         {"name": "System", "description": "System Health & Operational Status"},
     ],
@@ -55,6 +57,8 @@ app.include_router(documents_router)
 app.include_router(jobs_router)
 app.include_router(logs_router)
 app.include_router(chat_router)
+app.include_router(rag_router)
+
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
