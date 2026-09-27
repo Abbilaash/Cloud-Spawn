@@ -107,12 +107,13 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 filename=filename,
                 file_size=file_size,
                 file_path=destination_path,
+                s3_key=s3_key,
+                s3_uri=s3_uri or f"s3://{settings.AWS_S3_BUCKET_NAME}/{s3_key}",
                 status=DocumentStatus.UPLOADED
             )
-            doc_model["s3_key"] = s3_key
-            doc_model["s3_uri"] = s3_uri
 
             docs_col.insert_one(doc_model)
+
 
             logger.info(f"[MongoDB] Inserted document record for '{filename}' (ID: {document_id}, S3 URI: {s3_uri}) into 'documents' collection.")
 

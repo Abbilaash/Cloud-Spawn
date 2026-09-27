@@ -252,18 +252,28 @@ def process_knowledge_base_build_job(job_id: str):
             "status": final_doc_status,
             "processing_step": step_text
         }
+        s3_idx_uri = embedding_summary.get("s3_master_index_uri")
+        s3_meta_uri = embedding_summary.get("s3_master_metadata_uri")
+
         if c_id is not None:
             update_fields["cluster_id"] = c_id
         if master_idx_path:
             update_fields["faiss_index_path"] = master_idx_path
         if master_meta_path:
             update_fields["faiss_metadata_path"] = master_meta_path
+        if s3_idx_uri:
+            update_fields["s3_faiss_index_uri"] = s3_idx_uri
+            update_fields["s3_faiss_index_key"] = "vector_db/master_index.faiss"
+        if s3_meta_uri:
+            update_fields["s3_faiss_metadata_uri"] = s3_meta_uri
+            update_fields["s3_faiss_metadata_key"] = "vector_db/master_metadata.json"
 
         docs_col.update_one(
             {"document_id": doc_id},
             {"$set": update_fields}
         )
-        logger.info(f"[MongoDB] Updated document '{filename}' (ID: {doc_id}) in 'documents' collection. Status: '{final_doc_status}', Cluster: #{c_id if c_id is not None else 'N/A'}, Orchestrated Index: '{master_idx_path}'.")
+        logger.info(f"[MongoDB] Updated document '{filename}' (ID: {doc_id}) in 'documents' collection. Status: '{final_doc_status}', Cluster: #{c_id if c_id is not None else 'N/A'}, S3 Index URI: '{s3_idx_uri}'.")
+
 
     logger.info(f"[Job Runner] Build job {job_id} finalized with status: '{final_status}' ({cluster_count} dynamic clusters, {embedding_summary.get('total_chunks_vectorized', 0)} chunks vectorized, single orchestrated FAISS DB: '{master_idx_path}').")
 

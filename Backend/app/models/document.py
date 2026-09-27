@@ -12,6 +12,8 @@ def create_document_model(
     filename: str,
     file_size: int,
     file_path: str,
+    s3_key: str = "",
+    s3_uri: str = "",
     status: str = DocumentStatus.UPLOADED
 ) -> Dict[str, Any]:
     return {
@@ -19,6 +21,9 @@ def create_document_model(
         "filename": filename,
         "file_size": file_size,
         "file_path": file_path,
+        "s3_key": s3_key,
+        "s3_uri": s3_uri,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
         "status": status
     }
+
