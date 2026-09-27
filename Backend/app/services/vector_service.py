@@ -22,8 +22,20 @@ class VectorService:
                     master_meta = meta_candidate
 
         if not os.path.exists(master_idx):
+            # Attempt to download master FAISS index & metadata from AWS S3 (vector_db/ prefix)
+            try:
+                from app.services.s3_service import s3_service
+                if s3_service.is_configured():
+                    logger.info("[Vector Service] Local master index missing. Fetching 'vector_db/master_index.faiss' from AWS S3...")
+                    s3_service.download_file("vector_db/master_index.faiss", master_idx)
+                    s3_service.download_file("vector_db/master_metadata.json", master_meta)
+            except Exception as s3_err:
+                logger.warning(f"[Vector Service] S3 sync notice: {s3_err}")
+
+        if not os.path.exists(master_idx):
             logger.warning(f"[Vector Service] No FAISS vector index found at '{master_idx}'. Returning empty search results.")
             return []
+
 
         try:
             from app.rag_inference import FAISSVectorSearcher

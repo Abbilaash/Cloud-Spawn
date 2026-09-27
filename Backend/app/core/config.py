@@ -25,7 +25,13 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str = Field(default="")
     AWS_SECRET_ACCESS_KEY: str = Field(default="")
     AWS_LAMBDA_FUNCTION_NAME: str = Field(default="cloudspawn-lambda-worker")
-    AWS_S3_BUCKET_NAME: str = Field(default="cloudspawn-faiss-indexes")
+
+    # AWS Dedicated S3 Document Storage Configurations
+    AWS_S3_ACCESS_KEY_ID: str = Field(default="")
+    AWS_S3_SECRET_ACCESS_KEY: str = Field(default="")
+    AWS_S3_REGION: str = Field(default="")
+    AWS_S3_BUCKET_NAME: str = Field(default="cloudspawn-document-uploads")
+    
     FAISS_OUTPUT_DIRECTORY: str = Field(default="./data/faiss_indexes")
     
     @property
@@ -33,6 +39,19 @@ class Settings(BaseSettings):
         if not self.CORS_ORIGINS:
             return ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"]
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def s3_access_key(self) -> str:
+        return self.AWS_S3_ACCESS_KEY_ID or self.AWS_ACCESS_KEY_ID
+
+    @property
+    def s3_secret_key(self) -> str:
+        return self.AWS_S3_SECRET_ACCESS_KEY or self.AWS_SECRET_ACCESS_KEY
+
+    @property
+    def s3_region(self) -> str:
+        return self.AWS_S3_REGION or self.AWS_REGION or "us-east-1"
+
 
 
     class Config:

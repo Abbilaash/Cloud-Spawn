@@ -197,8 +197,19 @@ def process_knowledge_base_build_job(job_id: str):
                     master_meta_path = orch_result.get("master_metadata_path")
                     embedding_summary["master_index_path"] = master_idx_path
                     embedding_summary["master_metadata_path"] = master_meta_path
+
+                    # Upload Master FAISS Index & Metadata files to S3 under vector_db/ prefix
+                    from app.services.s3_service import s3_service
+                    if master_idx_path and os.path.exists(master_idx_path):
+                        s3_idx_uri = s3_service.upload_file_from_disk(master_idx_path, "vector_db/master_index.faiss")
+                        embedding_summary["s3_master_index_uri"] = s3_idx_uri
+                    if master_meta_path and os.path.exists(master_meta_path):
+                        s3_meta_uri = s3_service.upload_file_from_disk(master_meta_path, "vector_db/master_metadata.json")
+                        embedding_summary["s3_master_metadata_uri"] = s3_meta_uri
+                    logger.info(f"[S3 Storage] Master FAISS index & metadata files uploaded to S3 bucket '{settings.AWS_S3_BUCKET_NAME}' under 'vector_db/' prefix.")
             except Exception as orch_err:
                 logger.warning(f"[Formicx Orchestrator] Vector Orchestrator consolidation notice: {str(orch_err)}", exc_info=True)
+
 
     # 4. Finalize Job & Document Statuses in MongoDB
     completed_iso = datetime.now(timezone.utc).isoformat()

@@ -9,6 +9,7 @@ from app.core.database import db_manager
 from app.models.document import create_document_model, DocumentStatus
 from app.schemas.document import UploadResponse, DocumentItem, DocumentDetailResponse
 from app.services.vector_service import vector_service
+from app.services.s3_service import s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
 @router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_documents(files: List[UploadFile] = File(...)):
-    """Upload one or multiple DOCX/PDF files to knowledge base storage."""
+    """Upload one or multiple DOCX/PDF files to knowledge base storage (local disk & AWS S3)."""
     if not files:
         logger.warning("[File Upload] Upload request received with empty file list.")
         raise HTTPException(
@@ -24,13 +25,13 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             detail="No files uploaded."
         )
 
-    logger.info(f"[File Upload] Starting upload processing for {len(files)} file(s). Purging previous documents, vector FAISS DBs, and MongoDB collections...")
+    logger.info(f"[File Upload] Starting upload processing for {len(files)} file(s). Purging previous documents, vector FAISS DBs, S3 objects, and MongoDB collections...")
     upload_dir = settings.UPLOAD_DIRECTORY
     docs_col = db_manager.get_documents_collection()
     jobs_col = db_manager.get_jobs_collection()
     convs_col = db_manager.get_conversations_collection()
 
-    # 1. Purge previous uploaded files from disk
+    # 1. Purge previous uploaded files from disk and S3
     if os.path.exists(upload_dir):
         for f in os.listdir(upload_dir):
             if not f.startswith(".gitkeep"):
@@ -43,6 +44,8 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 except Exception as e:
                     logger.warning(f"[File Upload Cleanup] Could not remove file '{fp}': {e}")
     os.makedirs(upload_dir, exist_ok=True)
+
+    s3_purged = s3_service.purge_bucket()
 
     # 2. Purge previous local FAISS & vector DB indices
     vector_service.clear()
@@ -61,9 +64,8 @@ async def upload_documents(files: List[UploadFile] = File(...)):
     logger.info(
         f"[File Upload Cleanup] Purged {purged_docs.deleted_count} document(s), "
         f"{purged_jobs.deleted_count} job(s), {purged_convs.deleted_count} conversation(s), "
-        f"and all vector FAISS DB stores from MongoDB and local storage."
+        f"{s3_purged} S3 object(s), and all vector FAISS DB stores."
     )
-
 
     uploaded_docs: List[DocumentItem] = []
 
@@ -91,9 +93,14 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                     detail=f"Uploaded file '{filename}' is empty."
                 )
 
+            # Save locally
             with open(destination_path, "wb") as f:
                 f.write(content)
-            logger.info(f"[File Upload] Saved file bytes to disk at '{destination_path}' ({file_size} bytes)")
+            logger.info(f"[File Upload] Saved file bytes to local disk at '{destination_path}' ({file_size} bytes)")
+
+            # Save to S3 Bucket under uploads/ prefix
+            s3_key = f"uploads/{safe_filename}"
+            s3_uri = s3_service.upload_file_bytes(content=content, s3_key=s3_key, content_type=file.content_type)
 
             doc_model = create_document_model(
                 document_id=document_id,
@@ -102,9 +109,12 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 file_path=destination_path,
                 status=DocumentStatus.UPLOADED
             )
+            doc_model["s3_key"] = s3_key
+            doc_model["s3_uri"] = s3_uri
 
             docs_col.insert_one(doc_model)
-            logger.info(f"[MongoDB] Inserted document record for '{filename}' (ID: {document_id}) into 'documents' collection.")
+
+            logger.info(f"[MongoDB] Inserted document record for '{filename}' (ID: {document_id}, S3 URI: {s3_uri}) into 'documents' collection.")
 
             uploaded_docs.append(DocumentItem(
                 document_id=document_id,
@@ -113,6 +123,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 file_size=file_size,
                 uploaded_at=doc_model["uploaded_at"]
             ))
+
 
         except HTTPException:
             raise
@@ -220,23 +231,8 @@ async def delete_all_documents():
                 except Exception as e:
                     logger.warning(f"Could not remove file '{fp}': {e}")
 
-    # 2. Clean S3 bucket if configured
-    if settings.AWS_ACCESS_KEY_ID and settings.AWS_S3_BUCKET_NAME:
-        try:
-            import boto3
-            s3 = boto3.client(
-                "s3",
-                region_name=settings.AWS_REGION or "us-east-1",
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-            )
-            objects = s3.list_objects_v2(Bucket=settings.AWS_S3_BUCKET_NAME)
-            if "Contents" in objects:
-                delete_keys = [{"Key": obj["Key"]} for obj in objects["Contents"]]
-                s3.delete_objects(Bucket=settings.AWS_S3_BUCKET_NAME, Delete={"Objects": delete_keys})
-                logger.info(f"[S3 Cleanup] Deleted {len(delete_keys)} objects from S3 bucket '{settings.AWS_S3_BUCKET_NAME}'.")
-        except Exception as e:
-            logger.warning(f"[S3 Cleanup] S3 deletion notice: {e}")
+    # 2. Clean S3 bucket
+    s3_purged = s3_service.purge_bucket()
 
     # 3. Clean Vector Service (Local FAISS DB files, master indices, metadata maps, vector_db, chroma)
     vector_service.clear()
@@ -253,8 +249,8 @@ async def delete_all_documents():
 
     deleted_count = res.deleted_count
 
-    logger.info(f"[Cleanup] Purged {deleted_count} document record(s), conversations, jobs, and vector FAISS DBs from MongoDB and local storage.")
-    return {"status": "ok", "message": f"Successfully deleted {deleted_count} document(s) and purged all vector stores."}
+    logger.info(f"[Cleanup] Purged {deleted_count} document record(s), conversations, jobs, {s3_purged} S3 object(s), and vector FAISS DBs from MongoDB and local storage.")
+    return {"status": "ok", "message": f"Successfully deleted {deleted_count} document(s) and purged all vector stores and S3 objects."}
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_200_OK)
@@ -271,6 +267,7 @@ async def delete_document(document_id: str):
 
     file_path = doc.get("file_path", "")
     filename = doc.get("filename", "")
+    s3_key = doc.get("s3_key", f"{document_id}_{os.path.basename(filename)}")
 
     # 1. Delete file from disk
     if file_path and os.path.exists(file_path):
@@ -292,11 +289,16 @@ async def delete_document(document_id: str):
                 except Exception as e:
                     logger.warning(f"Could not remove file '{fp}': {e}")
 
-    # 2. Delete from Vector Service
+    # 2. Delete file from S3 Bucket
+    if s3_key:
+        s3_service.delete_file(s3_key)
+
+    # 3. Delete from Vector Service
     vector_service.delete_document(document_id)
 
-    # 3. Delete from MongoDB
+    # 4. Delete from MongoDB
     docs_col.delete_one({"document_id": document_id})
+
 
     # If no documents remain, purge all remaining jobs, conversations, and vector DB indices
     if docs_col.count_documents({}) == 0:
