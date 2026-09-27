@@ -41,7 +41,8 @@ except Exception:
 
 class VectorOrchestratorAgent(Agent):
     """Formicx Orchestrator Agent that collects partition FAISS indices and metadata maps
-    from serverless Lambda worker instances and consolidates them into a master FAISS vector DB.
+    from serverless Lambda worker instances, consolidates them into a single orchestrated FAISS vector DB,
+    and removes individual partition files so ONLY the master index & metadata remain stored.
     """
 
     def __init__(self, *args, **kwargs):
@@ -50,7 +51,7 @@ class VectorOrchestratorAgent(Agent):
 
     def on_start(self):
         logger.info(f"[{self.name}] Vector Orchestrator Agent started with ID: {self.id}")
-        logger.info(f"[{self.name}] FAISS vector index aggregation engine active.")
+        logger.info(f"[{self.name}] Single FAISS vector index & metadata orchestration engine active.")
         sys.stdout.flush()
 
     def register_job(self, job_id: str, total_clusters: int, output_dir: Optional[str] = None) -> Dict[str, Any]:
@@ -113,7 +114,7 @@ class VectorOrchestratorAgent(Agent):
         auto_merged = False
         merge_result = None
         if received_count >= total_expected:
-            logger.info(f"[{self.name}] Job '{job_id}': All {total_expected} partition outputs received. Merging master FAISS index...")
+            logger.info(f"[{self.name}] Job '{job_id}': All {total_expected} partition outputs received. Merging single master FAISS index...")
             merge_result = self.merge_job_indices(job_id)
             auto_merged = True
 
@@ -128,7 +129,9 @@ class VectorOrchestratorAgent(Agent):
         }
 
     def merge_job_indices(self, job_id: str) -> Dict[str, Any]:
-        """Consolidates all collected partition FAISS index files & metadata maps into a master FAISS DB."""
+        """Consolidates all collected partition FAISS index files & metadata maps into a single master FAISS DB
+        and purges individual partition files so ONLY the orchestrated single output is stored.
+        """
         if not FAISS_AVAILABLE:
             error_msg = "faiss package is not installed. Unable to merge vector index files."
             logger.error(f"[{self.name}] {error_msg}")
@@ -138,6 +141,20 @@ class VectorOrchestratorAgent(Agent):
             return {"status": "error", "message": f"Job '{job_id}' not found."}
 
         job = self.jobs[job_id]
+
+        # If job is already completed and master index exists, return existing result idempotently
+        if job.get("status") == "completed" and job.get("master_index_path") and os.path.exists(job.get("master_index_path")):
+            logger.info(f"[{self.name}] Job '{job_id}' is already completed. Returning master index: {job.get('master_index_path')}")
+            return {
+                "status": "success",
+                "job_id": job_id,
+                "total_vectors": job.get("total_vectors", 0),
+                "dimension": 384,
+                "master_index_path": job.get("master_index_path"),
+                "master_metadata_path": job.get("master_metadata_path"),
+                "cleaned_partition_files": 0
+            }
+
         received = job["received_clusters"]
 
         if not received:
@@ -205,7 +222,7 @@ class VectorOrchestratorAgent(Agent):
         if master_index is None or master_index.ntotal == 0:
             return {"status": "error", "message": "Failed to create master index (0 valid vectors extracted)."}
 
-        # 3. Save master FAISS index & metadata files
+        # 3. Save single master FAISS index & metadata files
         master_idx_path = os.path.join(output_dir, "master_index.faiss")
         master_meta_path = os.path.join(output_dir, "master_metadata.json")
 
@@ -223,6 +240,30 @@ class VectorOrchestratorAgent(Agent):
         with open(master_meta_path, "w", encoding="utf-8") as f:
             json.dump(master_payload, f, indent=2)
 
+        # 4. Cleanup individual cluster partition files so ONLY the orchestrated single output remains
+        cleaned_files = 0
+        for partition in sorted_clusters:
+            idx_p = partition.get("index_file_path")
+            meta_p = partition.get("metadata_file_path")
+            if idx_p and os.path.exists(idx_p) and os.path.abspath(idx_p) != os.path.abspath(master_idx_path):
+                try:
+                    os.remove(idx_p)
+                    cleaned_files += 1
+                except Exception as err:
+                    logger.warning(f"[{self.name}] Could not remove partition index file '{idx_p}': {err}")
+
+            if meta_p and os.path.exists(meta_p) and os.path.abspath(meta_p) != os.path.abspath(master_meta_path):
+                try:
+                    os.remove(meta_p)
+                    cleaned_files += 1
+                except Exception as err:
+                    logger.warning(f"[{self.name}] Could not remove partition metadata file '{meta_p}': {err}")
+
+        logger.info(
+            f"[{self.name}] Cleaned up {cleaned_files} temporary cluster partition file(s). "
+            f"Retained ONLY single orchestrated FAISS index at '{master_idx_path}' and metadata at '{master_meta_path}'."
+        )
+
         # Update job status state
         job["status"] = "completed"
         job["master_index_path"] = master_idx_path
@@ -230,7 +271,7 @@ class VectorOrchestratorAgent(Agent):
         job["total_vectors"] = master_index.ntotal
 
         logger.info(
-            f"[{self.name}] Successfully merged master FAISS DB for job '{job_id}' "
+            f"[{self.name}] Successfully orchestrated single master FAISS DB for job '{job_id}' "
             f"({master_index.ntotal} total vectors saved to {master_idx_path})."
         )
 
@@ -240,8 +281,44 @@ class VectorOrchestratorAgent(Agent):
             "total_vectors": master_index.ntotal,
             "dimension": dimension,
             "master_index_path": master_idx_path,
-            "master_metadata_path": master_meta_path
+            "master_metadata_path": master_meta_path,
+            "cleaned_partition_files": cleaned_files
         }
+
+    def orchestrate_clusters(
+        self,
+        job_id: str,
+        cluster_outputs: List[Dict[str, Any]],
+        output_dir: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """High-level Formicx orchestration method that registers, collects all partition outputs from Lambda workers,
+        merges them into a single consolidated FAISS vector index & metadata file, cleans up all individual partition files,
+        and returns the single orchestrated output details.
+        """
+        total_clusters = len(cluster_outputs)
+        self.register_job(job_id=job_id, total_clusters=total_clusters, output_dir=output_dir)
+
+        last_res = None
+        for partition in cluster_outputs:
+            c_id = partition.get("cluster_id", 0)
+            idx_path = partition.get("index_file_path")
+            meta_path = partition.get("metadata_file_path")
+            chunks_cnt = partition.get("total_chunks", 0)
+
+            if idx_path and meta_path:
+                last_res = self.submit_cluster_output(
+                    job_id=job_id,
+                    cluster_id=c_id,
+                    index_file_path=idx_path,
+                    metadata_file_path=meta_path,
+                    total_chunks=chunks_cnt
+                )
+
+        if last_res and last_res.get("auto_merged") and last_res.get("merge_result"):
+            return last_res.get("merge_result")
+
+        return self.merge_job_indices(job_id)
+
 
     def get_job_status(self, job_id: str) -> Dict[str, Any]:
         """Returns the current aggregation state for a given job."""
@@ -262,12 +339,18 @@ class VectorOrchestratorAgent(Agent):
     def on_message(self, message):
         """Formicx IPC message handler."""
         payload = message.payload or {}
-        logger.info(f"[{self.name}] Received message from '{message.sender}' (ID={message.message_id})")
+        logger.info(f"[{self.name}] Received Formicx message from '{message.sender}' (ID={message.message_id})")
 
         action = payload.get("action")
         job_id = payload.get("job_id")
 
-        if action == "register_job":
+        if action == "orchestrate_clusters":
+            cluster_outputs = payload.get("cluster_outputs", [])
+            output_dir = payload.get("output_dir")
+            res = self.orchestrate_clusters(job_id=job_id, cluster_outputs=cluster_outputs, output_dir=output_dir)
+            self.reply(message, payload=res)
+
+        elif action == "register_job":
             total_clusters = int(payload.get("total_clusters", 1))
             output_dir = payload.get("output_dir")
             res = self.register_job(job_id=job_id, total_clusters=total_clusters, output_dir=output_dir)
@@ -288,7 +371,7 @@ class VectorOrchestratorAgent(Agent):
             )
             self.reply(message, payload=res)
 
-        elif action == "merge_job_clusters":
+        elif action in ["merge_job_clusters", "merge_job_indices"]:
             res = self.merge_job_indices(job_id=job_id)
             self.reply(message, payload=res)
 
@@ -308,3 +391,4 @@ class VectorOrchestratorAgent(Agent):
 
 if __name__ == "__main__":
     VectorOrchestratorAgent().run()
+

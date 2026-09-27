@@ -139,37 +139,64 @@ def process_knowledge_base_build_job(job_id: str):
             logger.error(f"[AWS Lambda Runner] Error during Lambda worker dispatch: {str(exc)}", exc_info=True)
             embedding_summary = {"status": "failed", "error": str(exc), "total_chunks_vectorized": 0, "cluster_results": []}
 
-        # 3.5. Formicx Vector Orchestrator Agent Consolidation
+        # 3.5. Formicx Vector Orchestrator Agent Consolidation into a Single Index & Metadata
         if embedding_summary.get("status") in ["success", "partial_success"] and embedding_summary.get("cluster_results"):
             try:
                 faiss_output_dir = os.path.abspath(settings.FAISS_OUTPUT_DIRECTORY)
-                logger.info(f"[Formicx Orchestrator] Triggering VectorOrchestratorAgent to consolidate partition FAISS indices for job '{job_id}'...")
+                cluster_results = embedding_summary.get("cluster_results", [])
+                logger.info(f"[Formicx Orchestrator] Triggering VectorOrchestratorAgent to consolidate {len(cluster_results)} cluster output(s) into a single index & metadata file for job '{job_id}'...")
                 
-                vector_orchestration_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../vector-orchestrator"))
-                if vector_orchestration_dir not in sys.path:
-                    sys.path.insert(0, vector_orchestration_dir)
-                
-                from main import VectorOrchestratorAgent
-                orchestrator = VectorOrchestratorAgent()
-                orchestrator.register_job(job_id=job_id, total_clusters=len(clusters), output_dir=faiss_output_dir)
+                orch_result: Dict[str, Any] = {}
 
-                for c_res in embedding_summary.get("cluster_results", []):
-                    c_id = c_res.get("cluster_id", 0)
-                    idx_p = c_res.get("index_file_path")
-                    meta_p = c_res.get("metadata_file_path")
-                    c_chunks = c_res.get("total_chunks", 0)
+                # 1. Attempt Formicx Daemon IPC Client Call
+                try:
+                    from formicx import DaemonClient
+                    client = DaemonClient()
+                    logger.info("[Formicx Orchestrator] Sending IPC REQUEST message to 'vector-orchestrator' agent via Formicx Daemon...")
+                    client.send_message(
+                        sender="vector-orchestrator",
+                        recipient="vector-orchestrator",
+                        message_type="REQUEST",
+                        payload={
+                            "action": "orchestrate_clusters",
+                            "job_id": job_id,
+                            "cluster_outputs": cluster_results,
+                            "output_dir": faiss_output_dir
+                        }
+                    )
+                    time.sleep(1.0)
+                    history = client.get_inbox("vector-orchestrator", history=True)
+                    for msg in reversed(history):
+                        payload = msg.get("payload", {})
+                        if payload.get("status") == "success" and "master_index_path" in payload:
+                            orch_result = payload
+                            break
+                    if orch_result:
+                        logger.info(f"[Formicx Orchestrator] Received Formicx IPC response: Single master index created at '{orch_result.get('master_index_path')}' ({orch_result.get('total_vectors')} vectors).")
+                except Exception as daemon_err:
+                    logger.warning(f"[Formicx Orchestrator] Formicx IPC daemon notice ({str(daemon_err)}). Running direct agent execution...")
 
-                    if idx_p and meta_p and os.path.exists(idx_p) and os.path.exists(meta_p):
-                        orchestrator.submit_cluster_output(
-                            job_id=job_id,
-                            cluster_id=c_id,
-                            index_file_path=idx_p,
-                            metadata_file_path=meta_p,
-                            total_chunks=c_chunks
-                        )
+                # 2. Fallback: Direct VectorOrchestratorAgent Invocation
+                if not orch_result or orch_result.get("status") != "success":
+                    vector_orchestration_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../vector-orchestrator"))
+                    if vector_orchestration_dir not in sys.path:
+                        sys.path.insert(0, vector_orchestration_dir)
+                    
+                    from main import VectorOrchestratorAgent
+                    orchestrator = VectorOrchestratorAgent()
+                    orchestrator.on_start()
+                    orch_result = orchestrator.orchestrate_clusters(
+                        job_id=job_id,
+                        cluster_outputs=cluster_results,
+                        output_dir=faiss_output_dir
+                    )
+                    logger.info(f"[Formicx Orchestrator] Direct VectorOrchestratorAgent consolidation complete: Single master index at '{orch_result.get('master_index_path')}' ({orch_result.get('total_vectors', 0)} total vectors).")
 
-                merge_res = orchestrator.merge_job_indices(job_id)
-                logger.info(f"[Formicx Orchestrator] Master FAISS Vector DB successfully merged: {merge_res.get('total_vectors', 0)} total vectors saved to '{merge_res.get('master_index_path')}'")
+                if orch_result.get("status") == "success":
+                    master_idx_path = orch_result.get("master_index_path")
+                    master_meta_path = orch_result.get("master_metadata_path")
+                    embedding_summary["master_index_path"] = master_idx_path
+                    embedding_summary["master_metadata_path"] = master_meta_path
             except Exception as orch_err:
                 logger.warning(f"[Formicx Orchestrator] Vector Orchestrator consolidation notice: {str(orch_err)}", exc_info=True)
 
@@ -179,12 +206,8 @@ def process_knowledge_base_build_job(job_id: str):
     is_overall_success = is_clustering_success and is_embedding_success
     final_status = JobStatus.COMPLETED if is_overall_success else JobStatus.FAILED
 
-    # Build cluster index result map (cluster_id -> faiss index details)
-    cluster_index_map: Dict[int, Dict[str, Any]] = {}
-    for c_res in embedding_summary.get("cluster_results", []):
-        c_id = c_res.get("cluster_id")
-        if c_id is not None:
-            cluster_index_map[c_id] = c_res
+    master_idx_path = embedding_summary.get("master_index_path")
+    master_meta_path = embedding_summary.get("master_metadata_path")
 
     # Update Job record in MongoDB
     jobs_col.update_one(
@@ -198,20 +221,21 @@ def process_knowledge_base_build_job(job_id: str):
             "clusters": clusters,
             "total_chunks_vectorized": embedding_summary.get("total_chunks_vectorized", 0),
             "lambda_embedding_summary": embedding_summary,
+            "master_index_path": master_idx_path,
+            "master_metadata_path": master_meta_path,
             "completed_at": completed_iso
         }}
     )
     logger.info(f"[MongoDB] Updated build job {job_id} record in 'jobs' collection. Status: '{final_status}', Clusters: {cluster_count}, Chunks Vectorized: {embedding_summary.get('total_chunks_vectorized', 0)}.")
 
-    # Update Document records with telemetry and cluster ID assignments in MongoDB
+    # Update Document records with telemetry, cluster ID, and single orchestrated FAISS paths in MongoDB
     final_doc_status = DocumentStatus.COMPLETED if is_overall_success else DocumentStatus.FAILED
     for doc_id in document_ids:
         doc_record = docs_col.find_one({"document_id": doc_id})
         filename = doc_record.get("filename", "") if doc_record else ""
         c_id = doc_cluster_map.get(filename)
-        c_index_info = cluster_index_map.get(c_id, {}) if c_id is not None else {}
         
-        step_text = f"Vectorized & Indexed (AWS Lambda Worker - Cluster #{c_id})" if (is_overall_success and c_id is not None) else ("Formicx Partitioned" if is_clustering_success else "Processing Failed")
+        step_text = f"Vectorized & Indexed (Cluster #{c_id} -> Orchestrated FAISS DB)" if (is_overall_success and c_id is not None) else ("Formicx Partitioned" if is_clustering_success else "Processing Failed")
         
         update_fields: Dict[str, Any] = {
             "status": final_doc_status,
@@ -219,17 +243,18 @@ def process_knowledge_base_build_job(job_id: str):
         }
         if c_id is not None:
             update_fields["cluster_id"] = c_id
-        if c_index_info.get("index_file_path"):
-            update_fields["faiss_index_path"] = c_index_info.get("index_file_path")
-        if c_index_info.get("metadata_file_path"):
-            update_fields["faiss_metadata_path"] = c_index_info.get("metadata_file_path")
+        if master_idx_path:
+            update_fields["faiss_index_path"] = master_idx_path
+        if master_meta_path:
+            update_fields["faiss_metadata_path"] = master_meta_path
 
         docs_col.update_one(
             {"document_id": doc_id},
             {"$set": update_fields}
         )
-        logger.info(f"[MongoDB] Updated document '{filename}' (ID: {doc_id}) in 'documents' collection. Status: '{final_doc_status}', Cluster: #{c_id if c_id is not None else 'N/A'}.")
+        logger.info(f"[MongoDB] Updated document '{filename}' (ID: {doc_id}) in 'documents' collection. Status: '{final_doc_status}', Cluster: #{c_id if c_id is not None else 'N/A'}, Orchestrated Index: '{master_idx_path}'.")
 
-    logger.info(f"[Job Runner] Build job {job_id} finalized with status: '{final_status}' ({cluster_count} dynamic clusters, {embedding_summary.get('total_chunks_vectorized', 0)} chunks vectorized by AWS Lambda workers).")
+    logger.info(f"[Job Runner] Build job {job_id} finalized with status: '{final_status}' ({cluster_count} dynamic clusters, {embedding_summary.get('total_chunks_vectorized', 0)} chunks vectorized, single orchestrated FAISS DB: '{master_idx_path}').")
+
 
 

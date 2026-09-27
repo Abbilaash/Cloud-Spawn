@@ -106,28 +106,27 @@ def main():
     assert embedding_summary.get("status") in ["success", "partial_success"], "Lambda dispatch failed!"
 
     # 4. Step 3: Vector Orchestrator Agent Consolidation
-    print("\n4. [Formicx Orchestrator] Triggering VectorOrchestratorAgent to consolidate partition FAISS indices...")
+    print("\n4. [Formicx Orchestrator] Triggering VectorOrchestratorAgent to consolidate partition FAISS indices into a single index & metadata store...")
     orchestrator = VectorOrchestratorAgent()
-    orchestrator.register_job(job_id=job_id, total_clusters=len(clusters), output_dir=test_faiss_dir)
+    orchestrator.on_start()
 
-    for c_res in embedding_summary.get("cluster_results", []):
-        orchestrator.submit_cluster_output(
-            job_id=job_id,
-            cluster_id=c_res.get("cluster_id", 0),
-            index_file_path=c_res.get("index_file_path"),
-            metadata_file_path=c_res.get("metadata_file_path"),
-            total_chunks=c_res.get("total_chunks", 0)
-        )
-
-    merge_res = orchestrator.merge_job_indices(job_id)
+    merge_res = orchestrator.orchestrate_clusters(
+        job_id=job_id,
+        cluster_outputs=embedding_summary.get("cluster_results", []),
+        output_dir=test_faiss_dir
+    )
     master_index_path = merge_res.get("master_index_path")
     master_meta_path = merge_res.get("master_metadata_path")
 
-    print(f"   - Master FAISS Vector DB Status: {merge_res.get('status')}")
+    print(f"   - Single FAISS Vector DB Status: {merge_res.get('status')}")
     print(f"   - Merged Vector Count: {merge_res.get('total_vectors')}")
     print(f"   - Master Index File: {master_index_path} (Exists: {os.path.exists(master_index_path)})")
+    print(f"   - Master Metadata File: {master_meta_path} (Exists: {os.path.exists(master_meta_path)})")
+    print(f"   - Cleaned Partition Files: {merge_res.get('cleaned_partition_files')}")
 
     assert os.path.exists(master_index_path), "Master index file not created!"
+    assert os.path.exists(master_meta_path), "Master metadata file not created!"
+
 
     # 5. Step 4: RAG Vector Search Verification
     print("\n5. [Vector Service] Executing RAG Search Query over Consolidated Master FAISS Index...")
