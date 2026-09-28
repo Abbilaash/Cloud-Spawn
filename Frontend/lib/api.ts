@@ -155,10 +155,33 @@ export function clearAllDocuments() {
   })
 }
 
+export interface RAGSearchResultItem {
+  chunk_id: string
+  document_id: string
+  filename: string
+  chunk_index: number
+  text: string
+  score: number
+}
+
+export interface RAGSearchResponse {
+  query: string
+  top_k: number
+  total_matches: number
+  results: RAGSearchResultItem[]
+}
+
 export function sendChatMessage(message: string, conversationId?: string) {
   return request<ChatResponse>('/api/chat', {
     method: 'POST',
     body: JSON.stringify({ message, conversation_id: conversationId }),
+  })
+}
+
+export function searchRAGContext(query: string, top_k: number = 5) {
+  return request<RAGSearchResponse>('/api/rag/search', {
+    method: 'POST',
+    body: JSON.stringify({ query, top_k }),
   })
 }
 

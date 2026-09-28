@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Activity, ArrowUpRight, Box, ChevronRight, CircleDot, Database, FileText, Gauge, Grid2X2, Settings2, Terminal, Upload, Workflow, X } from 'lucide-react'
+import { Activity, ArrowUpRight, Box, ChevronRight, CircleDot, Database, FileText, Gauge, Grid2X2, MessageSquare, Settings2, Terminal, Upload, Workflow, X } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -10,6 +10,7 @@ const navigation = [
   { label: 'Overview', href: '/workspace', icon: Grid2X2 },
   { label: 'Documents', href: '/workspace/upload', icon: FileText },
   { label: 'Knowledge Base', href: '/workspace/knowledge-base', icon: Database },
+  { label: 'RAG Chat', href: '/workspace/chat', icon: MessageSquare },
 ]
 const system = [
   { label: 'Processing', href: '/workspace/processing', icon: Activity },
