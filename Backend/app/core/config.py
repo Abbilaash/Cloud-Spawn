@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     
     FAISS_OUTPUT_DIRECTORY: str = Field(default="./data/faiss_indexes")
     
+    # EKS Kubernetes Chatbot Service Integration URL
+    EKS_CHATBOT_URL: str = Field(default="")
+    
     @property
     def cors_origins_list(self) -> List[str]:
         if not self.CORS_ORIGINS:

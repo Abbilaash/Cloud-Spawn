@@ -97,18 +97,29 @@ data:
     """
         try:
             client = Groq(api_key=groq_key)
-            completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context_block},
-                    {"role": "user", "content": payload.text}
-                ],
-                temperature=1,
-                max_completion_tokens=2048,
-                top_p=1,
-                reasoning_effort="medium",
-                stream=False,
-            )
+            try:
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context_block},
+                        {"role": "user", "content": payload.text}
+                    ],
+                    temperature=0.3,
+                    max_completion_tokens=2048,
+                    stream=False,
+                )
+            except Exception as first_err:
+                print(f"Fallback to llama3-8b-8192 due to: {first_err}")
+                completion = client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context_block},
+                        {"role": "user", "content": payload.text}
+                    ],
+                    temperature=0.3,
+                    max_completion_tokens=2048,
+                    stream=False,
+                )
             answer = completion.choices[0].message.content or ""
             return ChatResponse(response=answer)
 
@@ -157,7 +168,7 @@ spec:
               mountPath: /app
           env:
             - name: GROQ_API_KEY
-              value: "YOUR_GROQ_API_KEY" # Replace with your Groq API key (e.g., gsk_...)
+              value: "YOUR_GROQ_API_KEY"
             - name: BACKEND_RAG_URL
               value: "http://cloudspawn-backend-service.default.svc.cluster.local:8000/api/rag/search"
           resources:

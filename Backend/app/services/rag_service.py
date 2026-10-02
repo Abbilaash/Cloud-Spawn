@@ -1,3 +1,4 @@
+import os
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -81,43 +82,65 @@ class RAGService:
 
         context_str = "\n\n".join(context_blocks) if context_blocks else "No relevant document chunks found."
 
-        # 5. Call LLM (Gemini)
-        api_key = self._get_api_key()
-        if not api_key:
-            if sources:
-                answer = f"Retrieved {len(sources)} relevant context sources from indexed documents. (Note: GEMINI_API_KEY / LLM_API_KEY is not configured in .env. Top context snippet: {context_blocks[0][:250]}...)"
-            else:
-                answer = "I cannot find the answer to your question in the provided documents."
-        else:
-            try:
-                user_prompt = f"Context:\n{context_str}\n\nQuestion:\n{user_message}"
-                model_name = settings.LLM_MODEL or "gemini-3.6-flash"
+        # 5. Call EKS Chatbot Service or LLM (Groq / Gemini)
+        answer: Optional[str] = None
+        eks_url = settings.EKS_CHATBOT_URL or os.environ.get("EKS_CHATBOT_URL")
 
-                if HAS_GENAI:
-                    client = genai.Client(api_key=api_key)
-                    full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=full_prompt
-                    )
-                    answer = response.text.strip()
+        if eks_url and eks_url.strip():
+            try:
+                import requests
+                logger.info(f"[RAG Service] Dispatching query & vector search context to EKS cluster service at: '{eks_url}'...")
+                payload = {
+                    "text": user_message,
+                    "context": context_str
+                }
+                res = requests.post(eks_url.strip(), json=payload, timeout=30)
+                if res.status_code == 200:
+                    res_data = res.json()
+                    answer = res_data.get("response") or res_data.get("answer") or ""
+                    logger.info("[RAG Service] Successfully received LLM answer from EKS cluster chatbot service.")
                 else:
-                    client = OpenAI(
-                        api_key=api_key,
-                        base_url=settings.LLM_BASE_URL if settings.LLM_BASE_URL else "https://generativelanguage.googleapis.com/v1beta/openai/"
-                    )
-                    response = client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        temperature=0.2
-                    )
-                    answer = response.choices[0].message.content.strip()
-            except Exception as e:
-                logger.error(f"Error calling LLM API: {str(e)}")
-                answer = f"Error generating answer from LLM: {str(e)}"
+                    logger.warning(f"[RAG Service] EKS chatbot returned HTTP {res.status_code}: {res.text}. Falling back to default LLM handler.")
+            except Exception as eks_err:
+                logger.error(f"[RAG Service] Error communicating with EKS chatbot service: {eks_err}", exc_info=True)
+
+        if not answer:
+            api_key = self._get_api_key()
+            if not api_key:
+                if sources:
+                    answer = f"Retrieved {len(sources)} relevant context sources from indexed documents. (Note: EKS_CHATBOT_URL / LLM_API_KEY is not configured in .env. Top context snippet: {context_blocks[0][:250]}...)"
+                else:
+                    answer = "I cannot find the answer to your question in the provided documents."
+            else:
+                try:
+                    user_prompt = f"Context:\n{context_str}\n\nQuestion:\n{user_message}"
+                    model_name = settings.LLM_MODEL or "gemini-3.6-flash"
+
+                    if HAS_GENAI:
+                        client = genai.Client(api_key=api_key)
+                        full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=full_prompt
+                        )
+                        answer = response.text.strip()
+                    else:
+                        client = OpenAI(
+                            api_key=api_key,
+                            base_url=settings.LLM_BASE_URL if settings.LLM_BASE_URL else "https://generativelanguage.googleapis.com/v1beta/openai/"
+                        )
+                        response = client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": SYSTEM_PROMPT},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            temperature=0.2
+                        )
+                        answer = response.choices[0].message.content.strip()
+                except Exception as e:
+                    logger.error(f"Error calling LLM API: {str(e)}")
+                    answer = f"Error generating answer from LLM: {str(e)}"
 
         # 6. Append Assistant Message to MongoDB history
         assistant_msg_model = create_message_model("assistant", answer)
