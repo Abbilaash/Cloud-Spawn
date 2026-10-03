@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Network,
   Play,
+  RefreshCw,
   Search,
   Server,
   ShieldCheck,
@@ -28,13 +29,45 @@ import {
 } from 'lucide-react'
 
 export default function Page() {
-  const [selectedNode, setSelectedNode] = useState<string>('eks')
+  const [selectedNode, setSelectedNode] = useState<string>('formicx')
   const [demoQuery, setDemoQuery] = useState('How does CloudSpawn orchestrate RAG across EKS?')
   const [isSimulating, setIsSimulating] = useState(false)
   const [simStep, setSimStep] = useState<number | null>(null)
   const [simCompleted, setSimCompleted] = useState(false)
 
+  // Formicx Task Splitting Animation State
+  const [isFormicxActive, setIsFormicxActive] = useState(false)
+  const [formicxPhase, setFormicxPhase] = useState<number>(0)
+
   const architectureNodes: Record<string, { title: string; subtitle: string; desc: string; icon: any; tech: string; badge: string; color: string; schema: string }> = {
+    formicx: {
+      title: 'Formicx Runtime Orchestrator',
+      subtitle: 'Dynamic Task Splitter & Agent Daemon',
+      desc: 'Formicx registers autonomous agents, monitors workload queues, dynamically splits heavy document processing tasks into parallel batches, and dispatches them across AWS Lambda worker tasks.',
+      icon: Network,
+      tech: 'Formicx Daemon Engine / Python',
+      badge: 'Task Splitter & Orchestrator',
+      color: 'border-rose-500/50 bg-rose-500/10 text-rose-400',
+      schema: `formicx_agent.register_agent("cloudspawn-worker")
+batches = split_document(document, batch_size=25)
+for batch in batches:
+    formicx_agent.send_message(target="lambda-worker", data=batch)
+results = await_formicx_inbox()`
+    },
+    lambda: {
+      title: 'AWS Lambda Worker Pool',
+      subtitle: 'cloudspawn-lambda-worker (Serverless)',
+      desc: 'Serverless execution workers triggered in parallel by Formicx. Each Lambda worker computes 384-dimensional dense vectors and uploads index fragments directly to AWS S3.',
+      icon: Zap,
+      tech: 'AWS Lambda / Python 3.11',
+      badge: 'Serverless Execution Tasks',
+      color: 'border-orange-500/50 bg-orange-500/10 text-orange-400',
+      schema: `def lambda_handler(event, context):
+    chunks = event["chunks"]
+    embeddings = embed_minilm(chunks)
+    s3.put_object(Bucket="cloudspawn-faiss-indexes", Key=event["key"], Body=embeddings)
+    return {"status": 200, "count": len(chunks)}`
+    },
     user: {
       title: 'User Interface / API Client',
       subtitle: 'Frontend Chat & REST Endpoints',
@@ -65,7 +98,7 @@ export default function Page() {
     },
     s3: {
       title: 'AWS S3 Document Storage',
-      subtitle: 'cloudspawn-storage-prod',
+      subtitle: 'cloudspawn-storage-prod & faiss-indexes',
       desc: 'Stores original uploaded Docx research files and serialized FAISS index metadata snapshots in region eu-north-1.',
       icon: Cloud,
       tech: 'AWS S3 / Boto3 SDK',
@@ -75,8 +108,8 @@ export default function Page() {
   ├── uploads/
   │   └── doc_88291.docx
   └── faiss_indexes/
-      ├── index.faiss
-      └── metadata.json`
+      ├── cluster_0_index.faiss
+      └── cluster_0_metadata.json`
     },
     embedding: {
       title: 'Dense Vector Embedder',
@@ -152,6 +185,18 @@ ENDPOINT: http://16.171.40.117:32574/chat`
     }, 2800)
   }
 
+  const handleRunFormicxAnimation = () => {
+    setIsFormicxActive(true)
+    setFormicxPhase(1)
+
+    setTimeout(() => setFormicxPhase(2), 900)
+    setTimeout(() => setFormicxPhase(3), 1800)
+    setTimeout(() => {
+      setFormicxPhase(4)
+      setIsFormicxActive(false)
+    }, 2700)
+  }
+
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-[#07090e] text-slate-100 selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Background Ambient Glow Lights */}
@@ -177,6 +222,7 @@ ENDPOINT: http://16.171.40.117:32574/chat`
           </Link>
 
           <div className="hidden items-center gap-8 text-sm font-medium text-slate-400 md:flex">
+            <a href="#formicx-animator" className="transition hover:text-white">Formicx & AWS Lambda</a>
             <a href="#flowchart" className="transition hover:text-white">Architecture Flowchart</a>
             <a href="#live-demo" className="transition hover:text-white">Interactive Demo</a>
             <a href="#features" className="transition hover:text-white">Features</a>
@@ -207,7 +253,7 @@ ENDPOINT: http://16.171.40.117:32574/chat`
         <div className="flex flex-col items-center text-center">
           <div className="mb-6 inline-flex items-center gap-2.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs font-semibold text-indigo-300 backdrop-blur-md shadow-sm">
             <Sparkles className="size-3.5 text-cyan-400" />
-            <span>Autonomous RAG & Kubernetes Knowledge Orchestrator</span>
+            <span>Formicx Orchestration × AWS Lambda Workers × AWS EKS</span>
           </div>
 
           <h1 className="max-w-4xl text-4xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl">
@@ -215,8 +261,8 @@ ENDPOINT: http://16.171.40.117:32574/chat`
           </h1>
 
           <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-400 sm:text-xl">
-            Transform unstructured research documents into high-dimensional FAISS vector indexes. 
-            Orchestrated automatically with zero-hallucination context injection on AWS EKS micro-services.
+            Formicx dynamically splits heavy document workloads, dispatches parallel serverless AWS Lambda workers, 
+            and orchestrates vector search directly into AWS EKS micro-services.
           </p>
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
@@ -228,10 +274,10 @@ ENDPOINT: http://16.171.40.117:32574/chat`
               <ArrowRight className="size-5" />
             </Link>
             <a
-              href="#flowchart"
+              href="#formicx-animator"
               className="glass-panel glass-card-hover inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-base font-semibold text-slate-200 transition hover:bg-slate-800/60"
             >
-              View Architecture Flowchart
+              View Formicx & Lambda Split
               <ChevronRight className="size-5 text-slate-400" />
             </a>
           </div>
@@ -239,30 +285,187 @@ ENDPOINT: http://16.171.40.117:32574/chat`
           {/* Metric Stats Banner */}
           <div className="mt-16 grid w-full max-w-4xl grid-cols-2 gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-6 backdrop-blur-xl sm:grid-cols-4">
             <div className="border-r border-slate-800/60 p-3 text-center last:border-none sm:border-r">
-              <div className="text-2xl font-bold text-white sm:text-3xl">384-Dim</div>
-              <div className="mt-1 text-xs font-medium text-slate-400">Dense Embeddings</div>
+              <div className="text-2xl font-bold text-rose-400 sm:text-3xl">Formicx</div>
+              <div className="mt-1 text-xs font-medium text-slate-400">Task Orchestrator</div>
+            </div>
+            <div className="border-r border-slate-800/60 p-3 text-center last:border-none sm:border-r">
+              <div className="text-2xl font-bold text-orange-400 sm:text-3xl">AWS Lambda</div>
+              <div className="mt-1 text-xs font-medium text-slate-400">Serverless Workers</div>
             </div>
             <div className="border-r border-slate-800/60 p-3 text-center last:border-none sm:border-r">
               <div className="text-2xl font-bold text-cyan-400 sm:text-3xl">FAISS L2</div>
-              <div className="mt-1 text-xs font-medium text-slate-400">Vector Search</div>
-            </div>
-            <div className="border-r border-slate-800/60 p-3 text-center last:border-none sm:border-r">
-              <div className="text-2xl font-bold text-purple-400 sm:text-3xl">AWS EKS</div>
-              <div className="mt-1 text-xs font-medium text-slate-400">Pod Orchestration</div>
+              <div className="mt-1 text-xs font-medium text-slate-400">384d Vector Search</div>
             </div>
             <div className="p-3 text-center">
-              <div className="text-2xl font-bold text-emerald-400 sm:text-3xl">Groq LLM</div>
-              <div className="mt-1 text-xs font-medium text-slate-400">Grounded Output</div>
+              <div className="text-2xl font-bold text-emerald-400 sm:text-3xl">AWS EKS</div>
+              <div className="mt-1 text-xs font-medium text-slate-400">Chatbot Micro-Service</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FORMICX & AWS LAMBDA TASK SPLITTING ANIMATED VISUALIZER */}
+      <section id="formicx-animator" className="mx-auto max-w-7xl px-6 py-16">
+        <div className="rounded-3xl border border-rose-500/20 bg-gradient-to-b from-slate-950 via-[#130d1a] to-slate-950 p-8 shadow-2xl backdrop-blur-xl sm:p-12">
+          <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-300">
+                <Network className="size-3.5 text-rose-400" /> Formicx Dynamic Workload Splitter
+              </div>
+              <h2 className="mt-3 text-3xl font-extrabold text-white sm:text-4xl">
+                Formicx Task Splitting & AWS Lambda Orchestration
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm text-slate-400">
+                Watch how Formicx intercepts incoming research documents, splits them into parallel sub-tasks, 
+                dispatches jobs across serverless AWS Lambda workers, and merges vector indexes into AWS S3.
+              </p>
+            </div>
+
+            <button
+              onClick={handleRunFormicxAnimation}
+              disabled={isFormicxActive}
+              className="inline-flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-rose-500 via-purple-600 to-indigo-600 px-6 py-3.5 text-sm font-semibold text-white shadow-xl shadow-rose-500/20 transition hover:scale-[1.02] hover:brightness-110 disabled:opacity-50"
+            >
+              {isFormicxActive ? (
+                <>
+                  <RefreshCw className="size-4 animate-spin" /> Splitting Workload...
+                </>
+              ) : (
+                <>
+                  <Zap className="size-4 text-yellow-300" /> Trigger Formicx Workload Split
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* ANIMATED TASK SPLITTING WORKFLOW CANVAS */}
+          <div className="mt-10 rounded-2xl border border-slate-800 bg-[#080a10] p-6 sm:p-8">
+            
+            {/* STEP PROGRESS INDICATOR */}
+            <div className="grid gap-3 sm:grid-cols-4 font-mono text-xs">
+              <div className={`rounded-xl p-3 border transition ${formicxPhase >= 1 ? 'border-rose-500/50 bg-rose-500/10 text-rose-300' : 'border-slate-800 bg-slate-900/40 text-slate-600'}`}>
+                1. Workload Ingestion
+              </div>
+              <div className={`rounded-xl p-3 border transition ${formicxPhase >= 2 ? 'border-indigo-500/50 bg-indigo-500/10 text-indigo-300' : 'border-slate-800 bg-slate-900/40 text-slate-600'}`}>
+                2. Formicx Sub-task Split
+              </div>
+              <div className={`rounded-xl p-3 border transition ${formicxPhase >= 3 ? 'border-orange-500/50 bg-orange-500/10 text-orange-300' : 'border-slate-800 bg-slate-900/40 text-slate-600'}`}>
+                3. AWS Lambda Parallel Execution
+              </div>
+              <div className={`rounded-xl p-3 border transition ${formicxPhase >= 4 ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 bg-slate-900/40 text-slate-600'}`}>
+                4. Formicx Inbox & S3 Merge
+              </div>
+            </div>
+
+            {/* VISUAL DIAGRAM NODES & PARALLEL BRANCHES */}
+            <div className="mt-8 grid gap-6 lg:grid-cols-3">
+              
+              {/* STAGE 1: FORMICX ORCHESTRATOR NODE */}
+              <div className="flex flex-col justify-center rounded-2xl border border-rose-500/40 bg-rose-500/5 p-6 backdrop-blur-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex size-12 items-center justify-center rounded-xl bg-rose-500/20 text-rose-400">
+                    <Network className="size-6" />
+                  </div>
+                  <span className="rounded-full border border-rose-500/30 bg-rose-500/20 px-3 py-1 font-mono text-xs font-bold text-rose-300">FORMICX DAEMON</span>
+                </div>
+
+                <div className="mt-5 text-xl font-bold text-white">Formicx Dynamic Splitter</div>
+                <p className="mt-2 text-xs leading-relaxed text-slate-300">
+                  Intercepts large research documents (`research_paper.docx`, 120 pages) and calculates chunk boundaries.
+                </p>
+
+                {formicxPhase >= 2 && (
+                  <div className="mt-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 font-mono text-[11px] text-indigo-300 animate-pulse">
+                    ⚡ Formicx split workload into 3 parallel sub-tasks!
+                  </div>
+                )}
+              </div>
+
+              {/* STAGE 2: PARALLEL AWS LAMBDA WORKERS */}
+              <div className="flex flex-col justify-center space-y-3">
+                <div className="text-center font-mono text-xs font-bold uppercase tracking-wider text-orange-400">
+                  Serverless AWS Lambda Workers (Parallel)
+                </div>
+
+                {/* Lambda Worker 1 */}
+                <div className={`rounded-xl border p-4 transition ${formicxPhase >= 3 ? 'border-orange-500/60 bg-orange-500/10 text-white shadow-lg shadow-orange-500/10' : 'border-slate-800 bg-slate-900/40 text-slate-500'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 font-bold text-xs">
+                      <Zap className="size-4 text-orange-400" />
+                      <span>Lambda Worker #1</span>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400">Batch 1 (Chunks 1–40)</span>
+                  </div>
+                  {formicxPhase >= 3 && (
+                    <div className="mt-2 font-mono text-[10px] text-emerald-400">
+                      ✓ Computed 40 dense 384d vectors
+                    </div>
+                  )}
+                </div>
+
+                {/* Lambda Worker 2 */}
+                <div className={`rounded-xl border p-4 transition ${formicxPhase >= 3 ? 'border-orange-500/60 bg-orange-500/10 text-white shadow-lg shadow-orange-500/10' : 'border-slate-800 bg-slate-900/40 text-slate-500'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 font-bold text-xs">
+                      <Zap className="size-4 text-orange-400" />
+                      <span>Lambda Worker #2</span>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400">Batch 2 (Chunks 41–80)</span>
+                  </div>
+                  {formicxPhase >= 3 && (
+                    <div className="mt-2 font-mono text-[10px] text-emerald-400">
+                      ✓ Computed 40 dense 384d vectors
+                    </div>
+                  )}
+                </div>
+
+                {/* Lambda Worker 3 */}
+                <div className={`rounded-xl border p-4 transition ${formicxPhase >= 3 ? 'border-orange-500/60 bg-orange-500/10 text-white shadow-lg shadow-orange-500/10' : 'border-slate-800 bg-slate-900/40 text-slate-500'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 font-bold text-xs">
+                      <Zap className="size-4 text-orange-400" />
+                      <span>Lambda Worker #3</span>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400">Batch 3 (Chunks 81–120)</span>
+                  </div>
+                  {formicxPhase >= 3 && (
+                    <div className="mt-2 font-mono text-[10px] text-emerald-400">
+                      ✓ Computed 40 dense 384d vectors
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* STAGE 3: FORMICX AGGREGATION & MASTER FAISS S3 PERSISTENCE */}
+              <div className="flex flex-col justify-center rounded-2xl border border-emerald-500/40 bg-emerald-500/5 p-6 backdrop-blur-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex size-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+                    <Database className="size-6" />
+                  </div>
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-3 py-1 font-mono text-xs font-bold text-emerald-300">MASTER INDEX</span>
+                </div>
+
+                <div className="mt-5 text-xl font-bold text-white">Formicx Inbox Aggregator</div>
+                <p className="mt-2 text-xs leading-relaxed text-slate-300">
+                  Formicx collects vector output messages from all 3 Lambda workers, merges FAISS index fragments, and notifies AWS EKS.
+                </p>
+
+                {formicxPhase >= 4 && (
+                  <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 font-mono text-[11px] text-emerald-300">
+                    ✨ Master FAISS index merged (120 vectors) & persisted to AWS S3! Ready for EKS queries.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* SYSTEM ARCHITECTURE FLOWCHART DIAGRAM */}
-      <section id="flowchart" className="mx-auto max-w-7xl px-6 py-20">
+      <section id="flowchart" className="mx-auto max-w-7xl px-6 py-16">
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
-            <GitBranch className="size-3.5 text-indigo-400" /> End-to-End System Topology
+            <GitBranch className="size-3.5 text-indigo-400" /> Complete System Topology
           </div>
           <h2 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">
             System Architecture Flowchart
@@ -276,185 +479,188 @@ ENDPOINT: http://16.171.40.117:32574/chat`
         <div className="rounded-3xl border border-slate-800 bg-slate-950/90 p-6 shadow-2xl backdrop-blur-xl sm:p-10">
           
           {/* TOP PIPELINE STAGE HEADERS */}
-          <div className="mb-8 hidden grid-cols-4 gap-4 text-center font-mono text-xs font-bold uppercase tracking-wider text-slate-500 lg:grid">
-            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">1. Client Request</div>
-            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">2. Vector Search Engine</div>
-            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">3. EKS Cluster Dispatch</div>
-            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">4. LLM Synthesis</div>
+          <div className="mb-8 hidden grid-cols-5 gap-4 text-center font-mono text-xs font-bold uppercase tracking-wider text-slate-500 lg:grid">
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">1. Client Tier</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">2. Formicx Splitter</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">3. Lambda Workers</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">4. FAISS Search</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">5. EKS Groq LLM</div>
           </div>
 
           {/* VISUAL FLOWCHART GRAPH NODES */}
-          <div className="grid gap-6 lg:grid-cols-4">
+          <div className="grid gap-6 lg:grid-cols-5">
             
             {/* NODE 1: User / Frontend */}
             <div className="flex flex-col justify-between gap-4">
               <button
                 onClick={() => setSelectedNode('user')}
-                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                className={`group relative flex flex-col rounded-2xl border p-4 text-left transition ${
                   selectedNode === 'user'
                     ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400">
-                    <MessageSquare className="size-5" />
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400">
+                    <MessageSquare className="size-4" />
                   </div>
-                  <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-blue-400">CLIENT</span>
+                  <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-blue-400">CLIENT</span>
                 </div>
-                <div className="mt-4 font-bold text-white">User Chat UI</div>
-                <div className="mt-1 text-xs text-slate-400">Next.js Frontend & API Requests</div>
+                <div className="mt-3 text-sm font-bold text-white">User Chat UI</div>
+                <div className="mt-1 text-[11px] text-slate-400">Next.js Frontend / REST API</div>
               </button>
-
-              <div className="hidden justify-center text-slate-600 lg:flex">
-                <ArrowRight className="size-6 animate-pulse text-indigo-400" />
-              </div>
 
               <button
                 onClick={() => setSelectedNode('backend')}
-                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                className={`group relative flex flex-col rounded-2xl border p-4 text-left transition ${
                   selectedNode === 'backend'
                     ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
-                    <Workflow className="size-5" />
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
+                    <Workflow className="size-4" />
                   </div>
-                  <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400">ORCHESTRATOR</span>
+                  <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-indigo-400">API GATEWAY</span>
                 </div>
-                <div className="mt-4 font-bold text-white">FastAPI RAG Engine</div>
-                <div className="mt-1 text-xs text-slate-400">Core Query Processing & Dispatch</div>
+                <div className="mt-3 text-sm font-bold text-white">FastAPI Core</div>
+                <div className="mt-1 text-[11px] text-slate-400">RAG Engine & Session Storage</div>
               </button>
             </div>
 
-            {/* NODE 2: Vector Search & S3 */}
-            <div className="flex flex-col justify-between gap-4">
+            {/* NODE 2: Formicx */}
+            <div className="flex flex-col justify-center gap-4">
               <button
-                onClick={() => setSelectedNode('embedding')}
-                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
-                  selectedNode === 'embedding'
-                    ? 'border-violet-500 bg-violet-500/10 shadow-lg shadow-violet-500/20'
+                onClick={() => setSelectedNode('formicx')}
+                className={`group relative flex h-full flex-col justify-between rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 'formicx'
+                    ? 'border-rose-500 bg-rose-500/10 shadow-xl shadow-rose-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-violet-500/20 text-violet-400">
-                    <Cpu className="size-5" />
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-rose-500/20 text-rose-400">
+                      <Network className="size-5" />
+                    </div>
+                    <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-rose-400">ORCHESTRATOR</span>
                   </div>
-                  <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-violet-400">384-DIM</span>
+                  <div className="mt-4 text-base font-bold text-white">Formicx Daemon</div>
+                  <div className="mt-1 text-xs text-slate-400">Workload Splitting & Agent Messaging</div>
                 </div>
-                <div className="mt-4 font-bold text-white">Dense Embedder</div>
-                <div className="mt-1 text-xs text-slate-400">Sentence-Transformers Vectorizer</div>
-              </button>
 
+                <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5 font-mono text-[10px] text-rose-300">
+                  ⚡ Splits tasks into Lambda workers
+                </div>
+              </button>
+            </div>
+
+            {/* NODE 3: AWS Lambda Workers */}
+            <div className="flex flex-col justify-center gap-4">
+              <button
+                onClick={() => setSelectedNode('lambda')}
+                className={`group relative flex h-full flex-col justify-between rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 'lambda'
+                    ? 'border-orange-500 bg-orange-500/10 shadow-xl shadow-orange-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400">
+                      <Zap className="size-5" />
+                    </div>
+                    <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-orange-400">SERVERLESS</span>
+                  </div>
+                  <div className="mt-4 text-base font-bold text-white">AWS Lambda Pool</div>
+                  <div className="mt-1 text-xs text-slate-400">Parallel 384d Dense Embeddings</div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-orange-500/30 bg-orange-500/10 p-2.5 font-mono text-[10px] text-orange-300">
+                  🔥 Parallel execution in S3
+                </div>
+              </button>
+            </div>
+
+            {/* NODE 4: FAISS & S3 */}
+            <div className="flex flex-col justify-between gap-4">
               <button
                 onClick={() => setSelectedNode('faiss')}
-                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                className={`group relative flex flex-col rounded-2xl border p-4 text-left transition ${
                   selectedNode === 'faiss'
                     ? 'border-purple-500 bg-purple-500/10 shadow-lg shadow-purple-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400">
-                    <Database className="size-5" />
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400">
+                    <Database className="size-4" />
                   </div>
-                  <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-purple-400">FAISS L2</span>
+                  <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-purple-400">FAISS L2</span>
                 </div>
-                <div className="mt-4 font-bold text-white">FAISS Vector Store</div>
-                <div className="mt-1 text-xs text-slate-400">Top-K Similarity Context Search</div>
+                <div className="mt-3 text-sm font-bold text-white">FAISS Vector Store</div>
+                <div className="mt-1 text-[11px] text-slate-400">Top-K Context Retrieval</div>
               </button>
 
               <button
                 onClick={() => setSelectedNode('s3')}
-                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                className={`group relative flex flex-col rounded-2xl border p-4 text-left transition ${
                   selectedNode === 's3'
                     ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400">
-                    <Cloud className="size-5" />
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400">
+                    <Cloud className="size-4" />
                   </div>
-                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-cyan-400">AWS S3</span>
+                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-cyan-400">AWS S3</span>
                 </div>
-                <div className="mt-4 font-bold text-white">S3 Document Storage</div>
-                <div className="mt-1 text-xs text-slate-400">Persisted Files & Index Snapshots</div>
+                <div className="mt-3 text-sm font-bold text-white">AWS S3 Bucket</div>
+                <div className="mt-1 text-[11px] text-slate-400">Files & FAISS Snapshots</div>
               </button>
             </div>
 
-            {/* NODE 3: EKS Cluster */}
-            <div className="flex flex-col justify-center gap-4">
+            {/* NODE 5: EKS & Groq LLM */}
+            <div className="flex flex-col justify-between gap-4">
               <button
                 onClick={() => setSelectedNode('eks')}
-                className={`group relative flex h-full flex-col justify-between rounded-2xl border p-6 text-left transition ${
+                className={`group relative flex flex-col rounded-2xl border p-4 text-left transition ${
                   selectedNode === 'eks'
-                    ? 'border-emerald-500 bg-emerald-500/10 shadow-xl shadow-emerald-500/20'
+                    ? 'border-emerald-500 bg-emerald-500/10 shadow-lg shadow-emerald-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex size-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
-                      <Server className="size-6" />
-                    </div>
-                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-xs font-bold text-emerald-400">K8S CLUSTER</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+                    <Server className="size-4" />
                   </div>
-                  <div className="mt-6 text-xl font-bold text-white">AWS EKS Cluster</div>
-                  <div className="mt-2 text-xs leading-relaxed text-slate-300">
-                    cloudspawn-eks-cluster (eu-north-1)
-                    <br />
-                    • Namespace: cloudspawn-rag
-                    <br />
-                    • LoadBalancer Endpoint: :32574
-                    <br />
-                    • EC2 NodeGroup: t3.small
-                  </div>
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-emerald-400">AWS EKS</span>
                 </div>
-
-                <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 font-mono text-[11px] text-emerald-300">
-                  ⚡ POST /chat Payload Injected
-                </div>
+                <div className="mt-3 text-sm font-bold text-white">AWS EKS Cluster</div>
+                <div className="mt-1 text-[11px] text-slate-400">LoadBalancer Endpoint :32574</div>
               </button>
-            </div>
 
-            {/* NODE 4: Groq LLM Output */}
-            <div className="flex flex-col justify-center gap-4">
               <button
                 onClick={() => setSelectedNode('groq')}
-                className={`group relative flex h-full flex-col justify-between rounded-2xl border p-6 text-left transition ${
+                className={`group relative flex flex-col rounded-2xl border p-4 text-left transition ${
                   selectedNode === 'groq'
-                    ? 'border-amber-500 bg-amber-500/10 shadow-xl shadow-amber-500/20'
+                    ? 'border-amber-500 bg-amber-500/10 shadow-lg shadow-amber-500/20'
                     : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex size-12 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
-                      <Bot className="size-6" />
-                    </div>
-                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 font-mono text-xs font-bold text-amber-400">LLM INFERENCE</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+                    <Bot className="size-4" />
                   </div>
-                  <div className="mt-6 text-xl font-bold text-white">Groq Llama-3.3 70B</div>
-                  <div className="mt-2 text-xs leading-relaxed text-slate-300">
-                    FastAPI Pod Service Container
-                    <br />
-                    • Grounded System Prompt
-                    <br />
-                    • Zero Hallucination Rules
-                    <br />
-                    • Source Document Citations
-                  </div>
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-400">LLM</span>
                 </div>
-
-                <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-[11px] text-amber-300">
-                  ✨ Grounded Answer + Citations
-                </div>
+                <div className="mt-3 text-sm font-bold text-white">Groq Llama 70B</div>
+                <div className="mt-1 text-[11px] text-slate-400">Grounded Answer Output</div>
               </button>
             </div>
+
           </div>
 
           {/* NODE SPECIFICATION DETAIL INSPECTOR */}
@@ -489,7 +695,7 @@ ENDPOINT: http://16.171.40.117:32574/chat`
       </section>
 
       {/* INTERACTIVE DEMO SIMULATOR */}
-      <section id="live-demo" className="mx-auto max-w-7xl px-6 py-20">
+      <section id="live-demo" className="mx-auto max-w-7xl px-6 py-16">
         <div className="rounded-3xl border border-indigo-500/20 bg-gradient-to-b from-slate-950 via-[#0c0f1c] to-slate-950 p-8 shadow-2xl backdrop-blur-xl sm:p-12">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300">
@@ -592,7 +798,7 @@ ENDPOINT: http://16.171.40.117:32574/chat`
       </section>
 
       {/* CORE FEATURES GRID */}
-      <section id="features" className="mx-auto max-w-7xl px-6 py-20">
+      <section id="features" className="mx-auto max-w-7xl px-6 py-16">
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
             <Zap className="size-3.5 text-indigo-400" /> Platform Features
@@ -607,32 +813,32 @@ ENDPOINT: http://16.171.40.117:32574/chat`
 
         <div className="grid gap-6 md:grid-cols-3">
           <div className="glass-panel glass-card-hover rounded-2xl p-7">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <Database className="size-6" />
+            <div className="flex size-12 items-center justify-center rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+              <Network className="size-6" />
             </div>
-            <h3 className="mt-5 text-xl font-bold text-white">FAISS Vector Search</h3>
+            <h3 className="mt-5 text-xl font-bold text-white">Formicx Task Orchestrator</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              High-dimensional L2 distance index for sub-millisecond similarity queries across indexed research collections.
+              Splits large document indexing workloads into sub-tasks and orchestrates serverless Lambda worker execution.
             </p>
           </div>
 
           <div className="glass-panel glass-card-hover rounded-2xl p-7">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+            <div className="flex size-12 items-center justify-center rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400">
+              <Zap className="size-6" />
+            </div>
+            <h3 className="mt-5 text-xl font-bold text-white">AWS Lambda Worker Tasks</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-400">
+              Serverless processing pool computing 384-dimensional dense vector embeddings in parallel into AWS S3.
+            </p>
+          </div>
+
+          <div className="glass-panel glass-card-hover rounded-2xl p-7">
+            <div className="flex size-12 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
               <Server className="size-6" />
             </div>
-            <h3 className="mt-5 text-xl font-bold text-white">AWS EKS Orchestration</h3>
+            <h3 className="mt-5 text-xl font-bold text-white">AWS EKS Cluster Service</h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-400">
               Isolated Kubernetes pod deployment running high-throughput FastAPI & Groq LLM inference endpoints.
-            </p>
-          </div>
-
-          <div className="glass-panel glass-card-hover rounded-2xl p-7">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
-              <ShieldCheck className="size-6" />
-            </div>
-            <h3 className="mt-5 text-xl font-bold text-white">Strict Source Attribution</h3>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">
-              Every generated response cites exact document IDs, filenames, and chunk indices to eliminate AI hallucinations.
             </p>
           </div>
         </div>
@@ -644,7 +850,7 @@ ENDPOINT: http://16.171.40.117:32574/chat`
           <div className="flex items-center gap-3">
             <span className="font-bold text-white">CloudSpawn</span>
             <span className="text-slate-600">|</span>
-            <span>FAISS Vector Indexing × AWS EKS Orchestrator</span>
+            <span>Formicx × AWS Lambda × AWS EKS Orchestrator</span>
           </div>
           <div className="flex items-center gap-6">
             <Link href="/workspace" className="text-slate-400 transition hover:text-white">Workspace</Link>
