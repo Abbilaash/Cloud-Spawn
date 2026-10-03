@@ -3,14 +3,18 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
+  ArrowDown,
   ArrowRight,
   Bot,
   CheckCircle2,
   ChevronRight,
+  Cloud,
   Cpu,
   Database,
   FileText,
+  GitBranch,
   Layers,
+  MessageSquare,
   Network,
   Play,
   Search,
@@ -24,64 +28,107 @@ import {
 } from 'lucide-react'
 
 export default function Page() {
-  const [activeStep, setActiveStep] = useState(0)
+  const [selectedNode, setSelectedNode] = useState<string>('eks')
   const [demoQuery, setDemoQuery] = useState('How does CloudSpawn orchestrate RAG across EKS?')
   const [isSimulating, setIsSimulating] = useState(false)
   const [simStep, setSimStep] = useState<number | null>(null)
   const [simCompleted, setSimCompleted] = useState(false)
 
-  const steps = [
-    {
-      n: '01',
-      title: 'Document Ingestion & Storage',
-      tagline: 'AWS S3 Upload',
-      desc: 'Docx & text research files are uploaded to dedicated S3 buckets with metadata extraction.',
-      icon: Upload,
-      color: 'from-blue-500 to-cyan-400',
-      badgeColor: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400',
-      details: ['Multi-format Docx parser', 'AWS S3 object key mapping', 'Deterministic document IDs']
+  const architectureNodes: Record<string, { title: string; subtitle: string; desc: string; icon: any; tech: string; badge: string; color: string; schema: string }> = {
+    user: {
+      title: 'User Interface / API Client',
+      subtitle: 'Frontend Chat & REST Endpoints',
+      desc: 'Users submit research queries through the React frontend or direct API endpoints (/api/chat, /api/rag/search).',
+      icon: MessageSquare,
+      tech: 'Next.js 16 / TypeScript',
+      badge: 'Client Tier',
+      color: 'border-blue-500/50 bg-blue-500/10 text-blue-400',
+      schema: `POST /api/chat
+{
+  "message": "What is CloudSpawn?",
+  "conversation_id": "conv-9921-x"
+}`
     },
-    {
-      n: '02',
-      title: 'Dense Embedding Generation',
-      tagline: 'all-MiniLM-L6-v2',
-      desc: 'Text is split into semantic chunks and converted into 384-dimensional dense vectors.',
+    backend: {
+      title: 'CloudSpawn RAG Orchestrator',
+      subtitle: 'FastAPI Backend Engine',
+      desc: 'Coordinates MongoDB history, triggers embedding generation, executes FAISS similarity queries, and packages EKS payloads.',
+      icon: Workflow,
+      tech: 'Python 3.11 / FastAPI',
+      badge: 'Core Gateway',
+      color: 'border-indigo-500/50 bg-indigo-500/10 text-indigo-400',
+      schema: `class RAGService:
+  def process_chat(user_message, conv_id):
+      query_vec = embed_text(user_message)
+      context = vector_service.search(query_vec)
+      return dispatch_to_eks(context)`
+    },
+    s3: {
+      title: 'AWS S3 Document Storage',
+      subtitle: 'cloudspawn-storage-prod',
+      desc: 'Stores original uploaded Docx research files and serialized FAISS index metadata snapshots in region eu-north-1.',
+      icon: Cloud,
+      tech: 'AWS S3 / Boto3 SDK',
+      badge: 'Persistence Layer',
+      color: 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400',
+      schema: `s3://cloudspawn-storage-prod/
+  ├── uploads/
+  │   └── doc_88291.docx
+  └── faiss_indexes/
+      ├── index.faiss
+      └── metadata.json`
+    },
+    embedding: {
+      title: 'Dense Vector Embedder',
+      subtitle: 'all-MiniLM-L6-v2',
+      desc: 'Transforms text chunks into 384-dimensional floating-point dense vector embeddings for semantic search.',
       icon: Cpu,
-      color: 'from-indigo-500 to-violet-400',
-      badgeColor: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
-      details: ['Sentence-Transformers engine', '384-dim dense vectors', 'Semantic boundary chunking']
+      tech: 'Sentence-Transformers / PyTorch',
+      badge: 'ML Vectorizer',
+      color: 'border-violet-500/50 bg-violet-500/10 text-violet-400',
+      schema: `Model: sentence-transformers/all-MiniLM-L6-v2
+Vector Dimensions: 384
+Output: ndarray(shape=(384,), dtype=float32)`
     },
-    {
-      n: '03',
-      title: 'FAISS Vector Indexing',
-      tagline: 'L2 Distance Search',
-      desc: 'High-speed similarity search indexes store chunks locally and in S3 for instant top-k retrieval.',
+    faiss: {
+      title: 'FAISS Vector Search Store',
+      subtitle: 'IndexFlatL2 Similarity Engine',
+      desc: 'Executes high-speed sub-millisecond Euclidean (L2) distance search across document vector chunks.',
       icon: Database,
-      color: 'from-purple-500 to-pink-400',
-      badgeColor: 'border-purple-500/30 bg-purple-500/10 text-purple-400',
-      details: ['FAISS IndexFlatL2 engine', 'Sub-millisecond retrieval', 'S3 index sync & reload']
+      tech: 'Meta FAISS C++ / Python',
+      badge: 'Vector Search Engine',
+      color: 'border-purple-500/50 bg-purple-500/10 text-purple-400',
+      schema: `faiss.IndexFlatL2(384)
+top_k_chunks = index.search(query_vec, k=5)
+Result: [{"chunk_id": "c-01", "score": 0.892}]`
     },
-    {
-      n: '04',
-      title: 'EKS Kubernetes Dispatch',
-      tagline: 'CloudSpawn Pod Service',
-      desc: 'Query string and retrieved vector search chunks are packaged and POSTed to EKS cluster service.',
+    eks: {
+      title: 'AWS EKS Kubernetes Cluster',
+      subtitle: 'cloudspawn-eks-cluster (eu-north-1)',
+      desc: 'Managed EKS cluster with LoadBalancer service (cloudspawn-chatbot-service) and auto-scaling t3.small EC2 nodegroup.',
       icon: Server,
-      color: 'from-emerald-500 to-teal-400',
-      badgeColor: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
-      details: ['LoadBalancer service endpoint', 'EKS NodeGroup scaling', 'Grounded context payload']
+      tech: 'Kubernetes v1.36 / AWS EKS',
+      badge: 'Cluster Micro-Service',
+      color: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
+      schema: `kubectl get svc -n cloudspawn-rag
+NAME: cloudspawn-chatbot-service
+TYPE: LoadBalancer
+ENDPOINT: http://16.171.40.117:32574/chat`
     },
-    {
-      n: '05',
-      title: 'Grounded LLM Generation',
-      tagline: 'Groq Llama-3.3 70B',
-      desc: 'Groq LLM synthesizes concise answers strictly bound to provided document context snippets.',
+    groq: {
+      title: 'Groq LLM Acceleration Pod',
+      subtitle: 'Llama-3.3 70B Versatile',
+      desc: 'Generates grounded, zero-hallucination markdown answers strictly constrained by the RAG document context.',
       icon: Bot,
-      color: 'from-amber-500 to-orange-400',
-      badgeColor: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
-      details: ['Zero hallucination enforcement', 'Exact document source attribution', 'Markdown response output']
+      tech: 'Groq API / Llama-3.3-70B',
+      badge: 'LLM Inference',
+      color: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
+      schema: `ChatResponse(
+  response="**CloudSpawn** is an AI-powered RAG...",
+  sources=[{"filename": "research.docx", "chunk": 1}]
+)`
     }
-  ]
+  }
 
   const sampleQueries = [
     'How does CloudSpawn orchestrate RAG across EKS?',
@@ -130,8 +177,7 @@ export default function Page() {
           </Link>
 
           <div className="hidden items-center gap-8 text-sm font-medium text-slate-400 md:flex">
-            <a href="#pipeline" className="transition hover:text-white">Architecture</a>
-            <a href="#how-it-works" className="transition hover:text-white">How It Works</a>
+            <a href="#flowchart" className="transition hover:text-white">Architecture Flowchart</a>
             <a href="#live-demo" className="transition hover:text-white">Interactive Demo</a>
             <a href="#features" className="transition hover:text-white">Features</a>
           </div>
@@ -157,26 +203,22 @@ export default function Page() {
       </header>
 
       {/* HERO SECTION */}
-      <section className="relative mx-auto max-w-7xl px-6 pb-20 pt-16 md:pt-24">
+      <section className="relative mx-auto max-w-7xl px-6 pb-16 pt-16 md:pt-24">
         <div className="flex flex-col items-center text-center">
-          {/* Badge */}
           <div className="mb-6 inline-flex items-center gap-2.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-xs font-semibold text-indigo-300 backdrop-blur-md shadow-sm">
             <Sparkles className="size-3.5 text-cyan-400" />
             <span>Autonomous RAG & Kubernetes Knowledge Orchestrator</span>
           </div>
 
-          {/* Main Title */}
           <h1 className="max-w-4xl text-4xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl">
             Orchestrate RAG Knowledge Bases across <span className="text-gradient-primary">AWS EKS & FAISS Vectors</span>
           </h1>
 
-          {/* Subtitle */}
           <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-400 sm:text-xl">
             Transform unstructured research documents into high-dimensional FAISS vector indexes. 
             Orchestrated automatically with zero-hallucination context injection on AWS EKS micro-services.
           </p>
 
-          {/* Action CTAs */}
           <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
             <Link
               href="/workspace"
@@ -186,10 +228,10 @@ export default function Page() {
               <ArrowRight className="size-5" />
             </Link>
             <a
-              href="#pipeline"
+              href="#flowchart"
               className="glass-panel glass-card-hover inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-base font-semibold text-slate-200 transition hover:bg-slate-800/60"
             >
-              Explore Architecture
+              View Architecture Flowchart
               <ChevronRight className="size-5 text-slate-400" />
             </a>
           </div>
@@ -216,122 +258,230 @@ export default function Page() {
         </div>
       </section>
 
-      {/* PIPELINE & ARCHITECTURE EXPLAINER */}
-      <section id="pipeline" className="mx-auto max-w-7xl px-6 py-20">
+      {/* SYSTEM ARCHITECTURE FLOWCHART DIAGRAM */}
+      <section id="flowchart" className="mx-auto max-w-7xl px-6 py-20">
         <div className="mb-12 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-xs font-semibold text-purple-300">
-            <Network className="size-3.5" /> Execution Topology
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
+            <GitBranch className="size-3.5 text-indigo-400" /> End-to-End System Topology
           </div>
           <h2 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">
-            How CloudSpawn Processes & Answers Queries
+            System Architecture Flowchart
           </h2>
           <p className="mt-3 text-slate-400">
-            Click on any pipeline stage to understand how data flows from raw documents into EKS cluster micro-services.
+            Click on any component node in the flowchart below to inspect its live data schema and technical specifications.
           </p>
         </div>
 
-        {/* Step Selector Tabs */}
-        <div className="grid gap-3 sm:grid-cols-5">
-          {steps.map((step, idx) => {
-            const Icon = step.icon
-            const isSelected = activeStep === idx
-            return (
+        {/* FLOWCHART DIAGRAM CANVAS */}
+        <div className="rounded-3xl border border-slate-800 bg-slate-950/90 p-6 shadow-2xl backdrop-blur-xl sm:p-10">
+          
+          {/* TOP PIPELINE STAGE HEADERS */}
+          <div className="mb-8 hidden grid-cols-4 gap-4 text-center font-mono text-xs font-bold uppercase tracking-wider text-slate-500 lg:grid">
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">1. Client Request</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">2. Vector Search Engine</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">3. EKS Cluster Dispatch</div>
+            <div className="rounded-lg border border-slate-800/60 bg-slate-900/30 py-2">4. LLM Synthesis</div>
+          </div>
+
+          {/* VISUAL FLOWCHART GRAPH NODES */}
+          <div className="grid gap-6 lg:grid-cols-4">
+            
+            {/* NODE 1: User / Frontend */}
+            <div className="flex flex-col justify-between gap-4">
               <button
-                key={step.n}
-                onClick={() => setActiveStep(idx)}
-                className={`flex flex-col items-start rounded-xl p-4 text-left transition ${
-                  isSelected
-                    ? 'border border-indigo-500/50 bg-slate-900/90 shadow-lg shadow-indigo-500/10'
-                    : 'border border-slate-800/60 bg-slate-950/40 hover:border-slate-700 hover:bg-slate-900/40'
+                onClick={() => setSelectedNode('user')}
+                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 'user'
+                    ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
                 }`}
               >
-                <div className="flex w-full items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-slate-500">{step.n}</span>
-                  <Icon className={`size-5 ${isSelected ? 'text-indigo-400' : 'text-slate-500'}`} />
-                </div>
-                <div className="mt-3 text-sm font-semibold text-white">{step.title}</div>
-                <div className="mt-1 text-xs text-slate-400">{step.tagline}</div>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Active Stage Detail Panel */}
-        <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-950/80 p-6 backdrop-blur-xl sm:p-8">
-          <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
-            <div>
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${steps[activeStep].badgeColor}`}>
-                Stage {steps[activeStep].n} · {steps[activeStep].tagline}
-              </span>
-              <h3 className="mt-4 text-2xl font-bold text-white">{steps[activeStep].title}</h3>
-              <p className="mt-3 leading-relaxed text-slate-300">{steps[activeStep].desc}</p>
-              
-              <div className="mt-6 space-y-2.5">
-                {steps[activeStep].details.map((detail, dIdx) => (
-                  <div key={dIdx} className="flex items-center gap-3 text-sm text-slate-300">
-                    <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
-                    <span>{detail}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-blue-500/20 text-blue-400">
+                    <MessageSquare className="size-5" />
                   </div>
-                ))}
+                  <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-blue-400">CLIENT</span>
+                </div>
+                <div className="mt-4 font-bold text-white">User Chat UI</div>
+                <div className="mt-1 text-xs text-slate-400">Next.js Frontend & API Requests</div>
+              </button>
+
+              <div className="hidden justify-center text-slate-600 lg:flex">
+                <ArrowRight className="size-6 animate-pulse text-indigo-400" />
               </div>
 
-              <div className="mt-8 flex items-center gap-3">
-                <Link
-                  href="/workspace"
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-400 hover:text-indigo-300"
-                >
-                  Try in Workspace <ArrowRight className="size-4" />
-                </Link>
+              <button
+                onClick={() => setSelectedNode('backend')}
+                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 'backend'
+                    ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
+                    <Workflow className="size-5" />
+                  </div>
+                  <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400">ORCHESTRATOR</span>
+                </div>
+                <div className="mt-4 font-bold text-white">FastAPI RAG Engine</div>
+                <div className="mt-1 text-xs text-slate-400">Core Query Processing & Dispatch</div>
+              </button>
+            </div>
+
+            {/* NODE 2: Vector Search & S3 */}
+            <div className="flex flex-col justify-between gap-4">
+              <button
+                onClick={() => setSelectedNode('embedding')}
+                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 'embedding'
+                    ? 'border-violet-500 bg-violet-500/10 shadow-lg shadow-violet-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-violet-500/20 text-violet-400">
+                    <Cpu className="size-5" />
+                  </div>
+                  <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-violet-400">384-DIM</span>
+                </div>
+                <div className="mt-4 font-bold text-white">Dense Embedder</div>
+                <div className="mt-1 text-xs text-slate-400">Sentence-Transformers Vectorizer</div>
+              </button>
+
+              <button
+                onClick={() => setSelectedNode('faiss')}
+                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 'faiss'
+                    ? 'border-purple-500 bg-purple-500/10 shadow-lg shadow-purple-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400">
+                    <Database className="size-5" />
+                  </div>
+                  <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-purple-400">FAISS L2</span>
+                </div>
+                <div className="mt-4 font-bold text-white">FAISS Vector Store</div>
+                <div className="mt-1 text-xs text-slate-400">Top-K Similarity Context Search</div>
+              </button>
+
+              <button
+                onClick={() => setSelectedNode('s3')}
+                className={`group relative flex flex-col rounded-2xl border p-5 text-left transition ${
+                  selectedNode === 's3'
+                    ? 'border-cyan-500 bg-cyan-500/10 shadow-lg shadow-cyan-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400">
+                    <Cloud className="size-5" />
+                  </div>
+                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-cyan-400">AWS S3</span>
+                </div>
+                <div className="mt-4 font-bold text-white">S3 Document Storage</div>
+                <div className="mt-1 text-xs text-slate-400">Persisted Files & Index Snapshots</div>
+              </button>
+            </div>
+
+            {/* NODE 3: EKS Cluster */}
+            <div className="flex flex-col justify-center gap-4">
+              <button
+                onClick={() => setSelectedNode('eks')}
+                className={`group relative flex h-full flex-col justify-between rounded-2xl border p-6 text-left transition ${
+                  selectedNode === 'eks'
+                    ? 'border-emerald-500 bg-emerald-500/10 shadow-xl shadow-emerald-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex size-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+                      <Server className="size-6" />
+                    </div>
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-xs font-bold text-emerald-400">K8S CLUSTER</span>
+                  </div>
+                  <div className="mt-6 text-xl font-bold text-white">AWS EKS Cluster</div>
+                  <div className="mt-2 text-xs leading-relaxed text-slate-300">
+                    cloudspawn-eks-cluster (eu-north-1)
+                    <br />
+                    • Namespace: cloudspawn-rag
+                    <br />
+                    • LoadBalancer Endpoint: :32574
+                    <br />
+                    • EC2 NodeGroup: t3.small
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 font-mono text-[11px] text-emerald-300">
+                  ⚡ POST /chat Payload Injected
+                </div>
+              </button>
+            </div>
+
+            {/* NODE 4: Groq LLM Output */}
+            <div className="flex flex-col justify-center gap-4">
+              <button
+                onClick={() => setSelectedNode('groq')}
+                className={`group relative flex h-full flex-col justify-between rounded-2xl border p-6 text-left transition ${
+                  selectedNode === 'groq'
+                    ? 'border-amber-500 bg-amber-500/10 shadow-xl shadow-amber-500/20'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex size-12 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+                      <Bot className="size-6" />
+                    </div>
+                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 font-mono text-xs font-bold text-amber-400">LLM INFERENCE</span>
+                  </div>
+                  <div className="mt-6 text-xl font-bold text-white">Groq Llama-3.3 70B</div>
+                  <div className="mt-2 text-xs leading-relaxed text-slate-300">
+                    FastAPI Pod Service Container
+                    <br />
+                    • Grounded System Prompt
+                    <br />
+                    • Zero Hallucination Rules
+                    <br />
+                    • Source Document Citations
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 font-mono text-[11px] text-amber-300">
+                  ✨ Grounded Answer + Citations
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* NODE SPECIFICATION DETAIL INSPECTOR */}
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-[#080b12] p-6">
+            <div className="flex flex-col items-start justify-between gap-4 border-b border-slate-800/80 pb-4 sm:flex-row sm:items-center">
+              <div>
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${architectureNodes[selectedNode].color}`}>
+                  {architectureNodes[selectedNode].badge}
+                </span>
+                <h3 className="mt-2 text-xl font-bold text-white">{architectureNodes[selectedNode].title}</h3>
+                <p className="text-xs text-slate-400">{architectureNodes[selectedNode].subtitle}</p>
+              </div>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 font-mono text-xs text-indigo-400">
+                Tech: {architectureNodes[selectedNode].tech}
               </div>
             </div>
 
-            {/* Architecture Diagram Code Visualizer */}
-            <div className="rounded-xl border border-slate-800 bg-[#0b0e17] p-5 font-mono text-xs">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-3 text-slate-500">
-                <div className="flex items-center gap-2">
-                  <Terminal className="size-4 text-indigo-400" />
-                  <span className="font-semibold text-slate-300">pipeline_execution_node_{steps[activeStep].n}.py</span>
-                </div>
-                <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">READY</span>
-              </div>
-              <pre className="mt-4 overflow-x-auto text-slate-300 leading-relaxed">
-{activeStep === 0 && `
-# 1. AWS S3 Upload & Key Parsing
-s3_client.upload_fileobj(
-    file_obj=document.file,
-    bucket="cloudspawn-storage-prod",
-    key=f"uploads/{document_id}.docx"
-)
-logger.info(f"Document {filename} indexed in S3.")
-`}
-{activeStep === 1 && `
-# 2. Sentence-Transformers Embedding
-model = SentenceTransformer("all-MiniLM-L6-v2")
-embeddings = model.encode(chunks, normalize_embeddings=True)
-print(f"Generated {len(embeddings)} 384-d vectors.")
-`}
-{activeStep === 2 && `
-# 3. FAISS Vector Search Index
-index = faiss.IndexFlatL2(384)
-index.add(np.array(embeddings, dtype=np.float32))
-top_k_indices, scores = index.search(query_vec, top_k=5)
-`}
-{activeStep === 3 && `
-# 4. EKS Cluster Dispatch Payload
-payload = {
-    "text": user_query,
-    "context": "\\n\\n".join([c["text"] for c in top_chunks])
-}
-res = requests.post(EKS_CHATBOT_URL, json=payload)
-`}
-{activeStep === 4 && `
-# 5. EKS Pod Groq LLM Response
-completion = groq_client.chat.completions.create(
-    model="llama-3.3-70b-versatile",
-    messages=[{"role": "system", "content": prompt}]
-)
-answer = completion.choices[0].message.content
-`}
+            <p className="mt-4 text-sm leading-relaxed text-slate-300">
+              {architectureNodes[selectedNode].desc}
+            </p>
+
+            {/* Code / Config Snippet */}
+            <div className="mt-4 rounded-xl border border-slate-800 bg-[#0c0f18] p-4 font-mono text-xs">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Live Data Payload & Specification</div>
+              <pre className="overflow-x-auto text-slate-300 leading-relaxed">
+                {architectureNodes[selectedNode].schema}
               </pre>
             </div>
           </div>
@@ -353,7 +503,6 @@ answer = completion.choices[0].message.content
             </p>
           </div>
 
-          {/* Sample Prompts */}
           <div className="mt-6 flex flex-wrap gap-2">
             {sampleQueries.map((q, i) => (
               <button
@@ -366,7 +515,6 @@ answer = completion.choices[0].message.content
             ))}
           </div>
 
-          {/* Interactive Query Input */}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-500" />
@@ -447,13 +595,13 @@ answer = completion.choices[0].message.content
       <section id="features" className="mx-auto max-w-7xl px-6 py-20">
         <div className="mb-12 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
-            <Zap className="size-3.5 text-indigo-400" /> Platform Architecture
+            <Zap className="size-3.5 text-indigo-400" /> Platform Features
           </div>
           <h2 className="mt-4 text-3xl font-extrabold text-white sm:text-4xl">
-            Built for Autonomous AI Workloads
+            Engineered for Production RAG
           </h2>
           <p className="mt-3 text-slate-400">
-            Key capabilities engineered for reliability, accuracy, and scale.
+            Core components built for high speed, strict source attribution, and multi-cluster scaling.
           </p>
         </div>
 
