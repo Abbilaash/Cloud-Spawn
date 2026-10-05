@@ -1,7 +1,18 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const getApiUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL !== 'http://localhost:8000') {
+    return process.env.NEXT_PUBLIC_API_URL
+  }
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return 'http://13.61.2.192'
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'http://13.61.2.192'
+}
+
+const API_URL = getApiUrl()
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const baseUrl = getApiUrl()
+  const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
@@ -59,7 +70,7 @@ export interface DocumentTelemetry {
 
 export interface JobStatusResponse {
   job_id: string
-  status: 'queued' | 'processing' | 'completed' | 'failed'
+  status: 'queued' | 'processing' | 'completed' | 'failed' | string
   total_documents: number
   processed_documents: number
   failed_documents: number
@@ -71,7 +82,6 @@ export interface JobStatusResponse {
   started_at?: string
   completed_at?: string
 }
-
 
 export interface LogEntry {
   id: string
@@ -92,16 +102,39 @@ export interface SourceItem {
   chunk_index: number
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: string
+}
+
 export interface ChatResponse {
   conversation_id: string
   answer: string
   sources: SourceItem[]
 }
 
+export interface RAGSearchResultItem {
+  chunk_id: string
+  document_id: string
+  filename: string
+  chunk_index: number
+  text: string
+  score: number
+}
+
+export interface RAGSearchResponse {
+  query: string
+  top_k: number
+  total_matches: number
+  results: RAGSearchResultItem[]
+}
+
 export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
+  const baseUrl = getApiUrl()
   const body = new FormData()
   files.forEach((file) => body.append('files', file))
-  const response = await fetch(`${API_URL}/api/documents/upload`, { method: 'POST', body })
+  const response = await fetch(`${baseUrl}/api/documents/upload`, { method: 'POST', body })
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     throw new Error(errorData.detail || 'Upload failed')
@@ -155,22 +188,6 @@ export function clearAllDocuments() {
   })
 }
 
-export interface RAGSearchResultItem {
-  chunk_id: string
-  document_id: string
-  filename: string
-  chunk_index: number
-  text: string
-  score: number
-}
-
-export interface RAGSearchResponse {
-  query: string
-  top_k: number
-  total_matches: number
-  results: RAGSearchResultItem[]
-}
-
 export function sendChatMessage(message: string, conversationId?: string) {
   return request<ChatResponse>('/api/chat', {
     method: 'POST',
@@ -185,3 +202,6 @@ export function searchRAGContext(query: string, top_k: number = 5) {
   })
 }
 
+export function getConversationHistory(conversationId: string) {
+  return request<{ conversation_id: string; messages: ChatMessage[] }>(`/api/chat/${conversationId}`)
+}
