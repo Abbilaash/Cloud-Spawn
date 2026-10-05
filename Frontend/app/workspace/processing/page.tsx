@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   Activity,
@@ -19,9 +20,9 @@ import { Shell, SectionEyebrow, EmptyState } from '@/components/cloudspawn-shell
 import { Button } from '@/components/ui/button'
 import { getJobStatus, JobStatusResponse, DocumentTelemetry } from '@/lib/api'
 
-export default function ProcessingPage({ searchParams }: { searchParams: Promise<{ job_id?: string }> }) {
-  const params = use(searchParams)
-  const jobId = params.job_id
+function ProcessingContent() {
+  const searchParams = useSearchParams()
+  const jobId = searchParams.get('job_id') || undefined
 
   const [job, setJob] = useState<JobStatusResponse | null>(null)
   const [error, setError] = useState<string>('')
@@ -266,6 +267,21 @@ export default function ProcessingPage({ searchParams }: { searchParams: Promise
   )
 }
 
+export default function ProcessingPage() {
+  return (
+    <Suspense fallback={
+      <Shell>
+        <div className="flex items-center justify-center py-20 text-xs text-muted-foreground gap-2">
+          <Loader2 className="size-4 animate-spin text-emerald-500" />
+          <span>Loading telemetry...</span>
+        </div>
+      </Shell>
+    }>
+      <ProcessingContent />
+    </Suspense>
+  )
+}
+
 function DocumentTelemetryCard({ doc, formatBytes }: { doc: DocumentTelemetry; formatBytes: (b?: number) => string }) {
   const isCompleted = doc.status === 'completed'
   const isFailed = doc.status === 'failed'
@@ -355,4 +371,3 @@ function WorkerStep({
     </div>
   )
 }
-
