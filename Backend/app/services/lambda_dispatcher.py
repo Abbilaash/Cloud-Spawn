@@ -92,6 +92,15 @@ class LambdaDispatcherService:
                         vectors = body.get("vectors")
                         chunks = body.get("chunks", body.get("text_chunks", text_chunks))
                         
+                        if not vectors or not isinstance(vectors, list):
+                            try:
+                                from app.services.embedding_service import embedding_service
+                                chunk_texts = [c.get("text", "") for c in chunks if isinstance(c, dict) and c.get("text")]
+                                if chunk_texts:
+                                    vectors = [embedding_service.embed_text(t) for t in chunk_texts]
+                            except Exception as emb_err:
+                                logger.warning(f"[AWS Lambda Dispatcher] Fallback vectorization notice: {emb_err}")
+                        
                         if vectors and isinstance(vectors, list):
                             import numpy as np
                             import faiss
@@ -106,7 +115,7 @@ class LambdaDispatcherService:
                             
                             body["index_file_path"] = local_idx_path
                             body["metadata_file_path"] = local_meta_path
-                            logger.info(f"[AWS Lambda Dispatcher] Reconstructed local partition FAISS index '{local_idx_path}' from AWS Lambda response vectors.")
+                            logger.info(f"[AWS Lambda Dispatcher] Reconstructed local partition FAISS index '{local_idx_path}' for cluster #{cluster_id}.")
 
                     return body
                 else:
