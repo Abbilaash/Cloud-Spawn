@@ -64,10 +64,17 @@ class LambdaDispatcherService:
                     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
                 )
 
+                lambda_payload = {
+                    "job_id": job_id,
+                    "cluster_id": cluster_id,
+                    "text_chunks": text_chunks,
+                    "output_dir": "/tmp"
+                }
+
                 response = lambda_client.invoke(
                     FunctionName=settings.AWS_LAMBDA_FUNCTION_NAME,
                     InvocationType="RequestResponse",
-                    Payload=json.dumps(payload)
+                    Payload=json.dumps(lambda_payload)
                 )
 
                 response_payload_raw = response["Payload"].read().decode("utf-8")
