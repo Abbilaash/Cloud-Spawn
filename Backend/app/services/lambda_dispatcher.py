@@ -84,7 +84,7 @@ class LambdaDispatcherService:
                     body = response_data.get("body", {})
                     logger.info(f"[AWS Lambda Dispatcher] AWS Lambda worker for Cluster #{cluster_id} completed successfully. Vectorized {body.get('total_chunks')} chunks.")
                     
-                    # Ensure partition FAISS index & metadata files exist locally on EC2 disk for VectorOrchestratorAgent to merge
+                    # Ensure partition FAISS index & metadata files exist locally on host disk for VectorOrchestratorAgent to merge
                     local_idx_path = os.path.join(output_dir, f"cluster_{cluster_id}_index.faiss")
                     local_meta_path = os.path.join(output_dir, f"cluster_{cluster_id}_metadata.json")
                     
@@ -99,8 +99,8 @@ class LambdaDispatcherService:
                                 if chunk_texts:
                                     vectors = [embedding_service.embed_text(t) for t in chunk_texts]
                             except Exception as emb_err:
-                                logger.warning(f"[AWS Lambda Dispatcher] Fallback vectorization notice: {emb_err}")
-                        
+                                logger.warning(f"[AWS Lambda Dispatcher] Local embedding fallback notice: {emb_err}")
+
                         if vectors and isinstance(vectors, list):
                             import numpy as np
                             import faiss
@@ -112,11 +112,10 @@ class LambdaDispatcherService:
                             
                             with open(local_meta_path, "w", encoding="utf-8") as f:
                                 json.dump(chunks, f, indent=2)
-                            
-                            body["index_file_path"] = local_idx_path
-                            body["metadata_file_path"] = local_meta_path
                             logger.info(f"[AWS Lambda Dispatcher] Reconstructed local partition FAISS index '{local_idx_path}' for cluster #{cluster_id}.")
 
+                    body["index_file_path"] = local_idx_path
+                    body["metadata_file_path"] = local_meta_path
                     return body
                 else:
                     logger.warning(f"[AWS Lambda Dispatcher] AWS Lambda worker returned notice: {response_data}. Running local worker fallback.")
