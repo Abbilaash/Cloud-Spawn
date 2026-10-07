@@ -166,7 +166,9 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
         "index_file_path": index_file_path,
         "metadata_file_path": metadata_file_path,
         "index_file_name": index_file_name,
-        "metadata_file_name": metadata_file_name
+        "metadata_file_name": metadata_file_name,
+        "vectors": embeddings.tolist(),
+        "chunks": formatted_chunks
     }
 
     return {

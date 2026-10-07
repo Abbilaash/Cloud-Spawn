@@ -83,6 +83,31 @@ class LambdaDispatcherService:
                 if response_data.get("statusCode") == 200:
                     body = response_data.get("body", {})
                     logger.info(f"[AWS Lambda Dispatcher] AWS Lambda worker for Cluster #{cluster_id} completed successfully. Vectorized {body.get('total_chunks')} chunks.")
+                    
+                    # Ensure partition FAISS index & metadata files exist locally on EC2 disk for VectorOrchestratorAgent to merge
+                    local_idx_path = os.path.join(output_dir, f"cluster_{cluster_id}_index.faiss")
+                    local_meta_path = os.path.join(output_dir, f"cluster_{cluster_id}_metadata.json")
+                    
+                    if not os.path.exists(local_idx_path) or not os.path.exists(local_meta_path):
+                        vectors = body.get("vectors")
+                        chunks = body.get("chunks", body.get("text_chunks", text_chunks))
+                        
+                        if vectors and isinstance(vectors, list):
+                            import numpy as np
+                            import faiss
+                            emb_arr = np.array(vectors, dtype=np.float32)
+                            dim = emb_arr.shape[1] if len(emb_arr.shape) > 1 else 384
+                            idx = faiss.IndexFlatIP(dim)
+                            idx.add(emb_arr)
+                            faiss.write_index(idx, local_idx_path)
+                            
+                            with open(local_meta_path, "w", encoding="utf-8") as f:
+                                json.dump(chunks, f, indent=2)
+                            
+                            body["index_file_path"] = local_idx_path
+                            body["metadata_file_path"] = local_meta_path
+                            logger.info(f"[AWS Lambda Dispatcher] Reconstructed local partition FAISS index '{local_idx_path}' from AWS Lambda response vectors.")
+
                     return body
                 else:
                     logger.warning(f"[AWS Lambda Dispatcher] AWS Lambda worker returned notice: {response_data}. Running local worker fallback.")
