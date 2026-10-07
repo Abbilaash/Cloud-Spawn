@@ -94,7 +94,7 @@ class RAGService:
                     "text": user_message,
                     "context": context_str
                 }
-                res = requests.post(eks_url.strip(), json=payload, timeout=30)
+                res = requests.post(eks_url.strip(), json=payload, timeout=5.0)
                 if res.status_code == 200:
                     res_data = res.json()
                     answer = res_data.get("response") or res_data.get("answer") or ""
