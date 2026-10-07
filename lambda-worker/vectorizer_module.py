@@ -1,3 +1,10 @@
+import os
+
+# Force HuggingFace and PyTorch cache directories to /tmp for AWS Lambda read-only filesystem compliance
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["TORCH_HOME"] = "/tmp/torch"
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/sentence_transformers"
+
 import logging
 from typing import List, Union, Optional
 import numpy as np
