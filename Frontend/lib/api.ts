@@ -3,9 +3,9 @@ const getApiUrl = () => {
     return process.env.NEXT_PUBLIC_API_URL
   }
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    return 'http://13.61.2.192'
+    return 'http://127.0.0.1:8000'
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://13.61.2.192'
+  return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
 }
 
 const API_URL = getApiUrl()
@@ -14,7 +14,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = getApiUrl()
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+      ...init?.headers 
+    },
   })
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
@@ -134,7 +138,13 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
   const baseUrl = getApiUrl()
   const body = new FormData()
   files.forEach((file) => body.append('files', file))
-  const response = await fetch(`${baseUrl}/api/documents/upload`, { method: 'POST', body })
+  const response = await fetch(`${baseUrl}/api/documents/upload`, { 
+    method: 'POST', 
+    headers: {
+      'ngrok-skip-browser-warning': 'true'
+    },
+    body 
+  })
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     throw new Error(errorData.detail || 'Upload failed')
